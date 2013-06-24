@@ -1,7 +1,12 @@
 package main
 
+import "sort"
 import "fmt"
 import "os"
+import "container/heap"
+
+// functions which Go developers should have implemented but happened
+// to be too lazy and religious to do so
 
 func max(a int32, b int32) (r int32) {
     if a > b {
@@ -11,16 +16,42 @@ func max(a int32, b int32) (r int32) {
     }
 }
 
-// TODO: PriorityQueue
-
 type Node struct {
-    index int32
+    index int32   // index in the input data
     value int32
     weight int32
-    bound float32
+    bound float32 // this is used as priority
 }
 
-func (node *Node) estimate(K int32, N int32, all []*Node) float32 {
+// Priority queue -------------------------------------------------------------
+
+type Items []Node
+
+func (self Items) Len() int { return len(self) }
+func (self Items) Less(i, j int) bool { return self[i].bound < self[j].bound }
+func (self Items) Swap(i, j int) { self[i], self[j] = self[j], self[i] }
+func (self *Items) Push(x interface{}) { *self = append(*self, x.(Node)) }
+func (self *Items) Pop() (popped interface{}) {
+    popped = (*self)[len(*self)-1]
+    *self = (*self)[:len(*self)-1]
+    return
+}
+
+// Sorting --------------------------------------------------------------------
+
+type ByValuePerWeight Items
+
+func (self ByValuePerWeight) Len() int { return len(self) }
+func (self ByValuePerWeight) Less(i, j int) bool {
+    a := float32(self[i].value) / float32(self[i].weight)
+    b := float32(self[j].value) / float32(self[j].weight)
+    return a < b
+}
+func (self ByValuePerWeight) Swap(i, j int) { self[i], self[j] = self[j], self[i] }
+
+// Branch and Bound -----------------------------------------------------------
+
+func (node *Node) estimate(K int32, N int32, items Items) float32 {
     var j, k int32
     var totweight int32
     var result float32
@@ -33,24 +64,77 @@ func (node *Node) estimate(K int32, N int32, all []*Node) float32 {
     totweight = node.weight
     j = node.index + 1
 
-    for j < N && totweight + all[j].weight <= K {
-        totweight += all[j].weight
-        result += float32(all[j].value)
+    for j < N && totweight + items[j].weight <= K {
+        totweight += items[j].weight
+        result += float32(items[j].value)
         j++
     }
 
     k = j
     if k < N {
-        result += float32((K - totweight) * all[k].value / all[k].weight)
+        result += float32((K - totweight) * items[k].value / items[k].weight)
     }
 
     return result
 }
 
-// TODO: BnB
+// see
+// http://books.google.ru/books?id=QrvsNy9paOYC&pg=PA235&lpg=PA235&dq=knapsack+problem+branch+and+bound+C%2B%2B&source=bl&ots=e6ok2kODMN&sig=Yh5__d3iAFa5rEkaCoBJ2JAWybk&hl=en&sa=X&ei=k1EDULDrHIfKqgHqtYyxDA&redir_esc=y#v=onepage&q&f=true
+
+func knapsackBranchAndBound(K int32, items Items, maxvalue *int32) {
+    var N int32 = int32(len(items))
+    var u, v Node
+    pq := &Items{}
+
+    heap.Init(pq)
+    *maxvalue = 0
+
+    // initialize root
+    v = Node{0, 0, 0, 0}
+    v.bound = v.estimate(K, N, items)
+    heap.Push(pq, v)
+
+    for pq.Len() != 0 {
+        v = heap.Pop(pq).(Node)
+        if v.bound > float32(*maxvalue) {
+            // make child that includes the item
+            u.index = v.index + 1
+            u.value = v.value + items[u.index].value
+            u.weight = v.weight + items[u.index].weight
+            if u.weight <= K && u.value > *maxvalue {
+                *maxvalue = u.value
+            }
+            u.bound = u.estimate(K, N, items)
+            if u.bound > float32(*maxvalue) {
+                heap.Push(pq, u)
+            }
+            // make child that does not include the item
+            u.value = v.value
+            u.weight = v.weight
+            u.bound = u.estimate(K, N, items)
+            if u.bound > float32(*maxvalue) {
+                heap.Push(pq, u)
+            }
+        }
+    }
+}
 
 func solveBranchAndBound(K int32, v []int32, w []int32) {
+    N := len(v)
+    items := make([]Node, N)
+    for i := 0; i < N; i++ {
+        items[i] = Node{int32(i), v[i], w[i], -1}
+    }
+    //fmt.Println(items)
+    sort.Sort(ByValuePerWeight(items))
+
+    var maxvalue int32 = -1
+    knapsackBranchAndBound(K, items, &maxvalue)
+
+    fmt.Println(maxvalue, 0)
 }
+
+// Dynamic Programming --------------------------------------------------------
 
 func solveDynamicProgramming(K int32, v []int32, w []int32) {
     var N int32 = int32(len(v))
@@ -130,8 +214,8 @@ func solveFile(filename string) {
 
     //fmt.Println(n, K)
     //fmt.Println(v, w)
-    solveDynamicProgramming(K, v, w)
-    //solveBranchAndBound(K, v, w)
+    //solveDynamicProgramming(K, v, w)
+    solveBranchAndBound(K, v, w)
 }
 
 func main() {
