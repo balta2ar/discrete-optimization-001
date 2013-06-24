@@ -45,7 +45,7 @@ func (self ByValuePerWeight) Len() int { return len(self) }
 func (self ByValuePerWeight) Less(i, j int) bool {
     a := float32(self[i].value) / float32(self[i].weight)
     b := float32(self[j].value) / float32(self[j].weight)
-    return a < b
+    return a > b
 }
 func (self ByValuePerWeight) Swap(i, j int) { self[i], self[j] = self[j], self[i] }
 
