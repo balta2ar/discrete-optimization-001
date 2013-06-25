@@ -21,6 +21,8 @@ type Node struct {
     value int32
     weight int32
     bound float32 // this is used as priority
+    selected byte
+    sel []byte
 }
 
 // Priority queue -------------------------------------------------------------
@@ -40,7 +42,6 @@ func (self *Items) Pop() (popped interface{}) {
 // Sorting --------------------------------------------------------------------
 
 type ByValuePerWeight Items
-
 func (self ByValuePerWeight) Len() int { return len(self) }
 func (self ByValuePerWeight) Less(i, j int) bool {
     a := float32(self[i].value) / float32(self[i].weight)
@@ -48,6 +49,11 @@ func (self ByValuePerWeight) Less(i, j int) bool {
     return a > b
 }
 func (self ByValuePerWeight) Swap(i, j int) { self[i], self[j] = self[j], self[i] }
+
+type ByIndex Items
+func (self ByIndex) Len() int { return len(self) }
+func (self ByIndex) Less(i, j int) bool { return self[i].index < self[j].index }
+func (self ByIndex) Swap(i, j int) { self[i], self[j] = self[j], self[i] }
 
 // Branch and Bound -----------------------------------------------------------
 
@@ -81,16 +87,20 @@ func (node *Node) estimate(K int32, N int32, items Items) float32 {
 // see
 // http://books.google.ru/books?id=QrvsNy9paOYC&pg=PA235&lpg=PA235&dq=knapsack+problem+branch+and+bound+C%2B%2B&source=bl&ots=e6ok2kODMN&sig=Yh5__d3iAFa5rEkaCoBJ2JAWybk&hl=en&sa=X&ei=k1EDULDrHIfKqgHqtYyxDA&redir_esc=y#v=onepage&q&f=true
 
-func knapsackBranchAndBound(K int32, items Items, maxvalue *int32) {
+func knapsackBranchAndBound(K int32, items Items, maxvalue *int32) []byte {
     var N int32 = int32(len(items))
     var u, v Node
+    //var x = make([]byte, N) // currently selected items
+    var bestset = make([]byte, N) // best selected items
     pq := &Items{}
 
     heap.Init(pq)
     *maxvalue = 0
 
     // initialize root
-    v = Node{0, 0, 0, 0}
+    u = Node{0, 0, 0, 0, 0, make([]byte, N)}
+    // index = -1, start with fake root node
+    v = Node{-1, 0, 0, 0, 0, make([]byte, N)}
     v.bound = v.estimate(K, N, items)
     heap.Push(pq, v)
 
@@ -98,40 +108,74 @@ func knapsackBranchAndBound(K int32, items Items, maxvalue *int32) {
         v = heap.Pop(pq).(Node)
         if v.bound > float32(*maxvalue) {
             // make child that includes the item
-            u.index = v.index + 1
-            u.value = v.value + items[u.index].value
-            u.weight = v.weight + items[u.index].weight
+            u = Node{v.index+1,
+                     v.value + items[v.index+1].value,
+                     v.weight + items[v.index+1].weight,
+                     0,
+                     0,
+                     make([]byte, N)}
+
+            copy(u.sel, v.sel)
+            u.sel[u.index] = 1
+
             if u.weight <= K && u.value > *maxvalue {
                 *maxvalue = u.value
+                copy(bestset, u.sel)
             }
             u.bound = u.estimate(K, N, items)
             if u.bound > float32(*maxvalue) {
                 heap.Push(pq, u)
             }
+
             // make child that does not include the item
-            u.value = v.value
-            u.weight = v.weight
+            u = Node{v.index+1,
+                     v.value,
+                     v.weight,
+                     0,
+                     0,
+                     make([]byte, N)}
             u.bound = u.estimate(K, N, items)
+            copy(u.sel, v.sel)
+            u.sel[u.index] = 0
+
             if u.bound > float32(*maxvalue) {
                 heap.Push(pq, u)
             }
         }
     }
+
+    return bestset
 }
 
 func solveBranchAndBound(K int32, v []int32, w []int32) {
     N := len(v)
     items := make([]Node, N)
     for i := 0; i < N; i++ {
-        items[i] = Node{int32(i), v[i], w[i], -1}
+        items[i] = Node{int32(i), v[i], w[i], -1, 0, make([]byte, N)}
     }
-    //fmt.Println(items)
     sort.Sort(ByValuePerWeight(items))
 
     var maxvalue int32 = -1
-    knapsackBranchAndBound(K, items, &maxvalue)
+    bestset := knapsackBranchAndBound(K, items, &maxvalue)
 
-    fmt.Println(maxvalue, 0)
+    fmt.Println(maxvalue, 1) // not always optimal (1), actually
+
+    // restore indexes
+    for i := 0; i < N; i++ {
+        items[i].selected = bestset[i]
+    }
+    sort.Sort(ByIndex(items))
+    for i := 0; i < N; i++ {
+        if items[i].selected == 1 {
+            fmt.Printf("1")
+        } else {
+            fmt.Printf("0")
+        }
+        if i != N-1 { // last?
+            fmt.Printf(" ")
+        }
+    }
+    fmt.Printf("\n")
 }
 
 // Dynamic Programming --------------------------------------------------------
@@ -140,8 +184,7 @@ func solveDynamicProgramming(K int32, v []int32, w []int32) {
     var N int32 = int32(len(v))
 
     var O = make([][]int32, K+1)
-    //fmt.Println(len(O))
-    var x = make([]int32, N)
+    var x = make([]byte, N)
     // create O lookup table
 
     var k int32
@@ -191,7 +234,7 @@ func solveDynamicProgramming(K int32, v []int32, w []int32) {
     fmt.Printf("\n")
 }
 
-func solveFile(filename string) {
+func solveFile(filename string, alg string) {
     file, err := os.Open(filename)
     if err != nil {
         fmt.Println("Cannot open file:", filename, err)
@@ -212,13 +255,26 @@ func solveFile(filename string) {
         fmt.Fscanf(file, "%d %d", &v[i], &w[i])
     }
 
+    fmt.Println("DP estimated memory usage, MB:", (int(K+1) * int(n+1) * 4 + int(n)) / 1024 / 1024)
+    return
     //fmt.Println(n, K)
     //fmt.Println(v, w)
-    //solveDynamicProgramming(K, v, w)
-    solveBranchAndBound(K, v, w)
+    switch {
+    case alg == "dp":
+        solveDynamicProgramming(K, v, w)
+    case alg == "bnb":
+        solveBranchAndBound(K, v, w)
+    default:
+        //fmt.Println("Auto select algorithm (BnB for now)")
+        solveBranchAndBound(K, v, w)
+    }
 }
 
 func main() {
     //fmt.Println("Solving file", os.Args[1])
-    solveFile(os.Args[1])
+    alg := "auto"
+    if len(os.Args) > 2 {
+        alg = os.Args[2]
+    }
+    solveFile(os.Args[1], alg)
 }
