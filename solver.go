@@ -2,8 +2,14 @@ package main
 
 import "sort"
 import "fmt"
+//import "encoding/gob"
 import "os"
+//import "io/ioutil"
+import "io"
+import "bytes"
 import "container/heap"
+import "encoding/binary"
+import "compress/gzip"
 
 // functions which Go developers should have implemented but happened
 // to be too lazy and religious to do so
@@ -180,10 +186,47 @@ func solveBranchAndBound(K int32, v []int32, w []int32) {
 
 // Dynamic Programming --------------------------------------------------------
 
+func dumpToFile(file *os.File, data []int32) int64 {
+    // write data into bytes Buffer
+    var buf bytes.Buffer
+    binary.Write(&buf, binary.LittleEndian, data)
+
+    // prepare packed buffer
+    var packedBuf bytes.Buffer
+    z := gzip.NewWriter(&packedBuf)
+
+    // write unpacked to packed through gzip
+    buf.WriteTo(z)
+    z.Flush()
+    z.Close()
+
+    size := int64(packedBuf.Len())
+    packedBuf.WriteTo(file)
+    return size
+}
+
+func loadFromFile(file *os.File, size int, data *[]int32) {
+    var packedIn bytes.Buffer
+    packedIn.ReadFrom(io.LimitReader(file, int64(size)))
+
+    unz, _ := gzip.NewReader(&packedIn)
+    var unpacked bytes.Buffer
+    unpacked.ReadFrom(unz)
+
+    //var dataIn = make([]int32, N)
+    binary.Read(&unpacked, binary.LittleEndian, data)
+}
+
 func solveDynamicProgramming(K int32, v []int32, w []int32) {
     var N int32 = int32(len(v))
 
-    var O = make([][]int32, K+1)
+    file, _ := os.Create("dptable.bin")
+    var offsets = make([]int64, N+1) // store offsets of dumped columns in the file
+    var sizes = make([]int, N+1)
+    var position int64
+    var lastPackedSize int64
+
+    var O = make([][]int32, 2)
     var x = make([]byte, N)
     // create O lookup table
 
@@ -191,39 +234,161 @@ func solveDynamicProgramming(K int32, v []int32, w []int32) {
     var j int32
     var i int32
 
-    for k = 0; k <= K; k++ {
-        O[k] = make([]int32, N+1)
-        O[k][0] = 0
+    for i = 0; i <= 1; i++ {
+        O[i] = make([]int32, K+1)
+        O[i][0] = 0
     }
+
     // reset item-in-use table
     for j = 0; j < N; j++ {
         x[j] = 0
-        O[0][j] = 0
     }
+    O[0][0] = 0
+    O[1][0] = 0
     // O(k,j) denotes the optimal solution to the
     // knapsack problem with capacity k and
     // items [1..j]
 
-    // for all capacities
-    for k = 1; k <= K; k++ {
-        // for all items
-        for j = 1; j <= N; j++ {
+    lastPackedSize = dumpToFile(file, O[0])
+    offsets[0] = position
+    sizes[0] = int(lastPackedSize)
+    position += lastPackedSize
+
+    // for all items
+    for j = 1; j <= N; j++ {
+        // for all capacities
+        for k = 1; k <= K; k++ {
             if w[j-1] <= k {
-                O[k][j] = max(O[k][j-1], v[j-1] + O[k-w[j-1]][j-1])
+                O[1][k] = max(O[0][k], v[j-1] + O[0][k-w[j-1]])
             } else {
-                O[k][j] = O[k][j-1]
+                O[1][k] = O[0][k]
             }
+        }
+
+        // dump to disk and save offset
+        lastPackedSize = dumpToFile(file, O[1])
+        offsets[j] = position
+        sizes[j] = int(lastPackedSize)
+        position += lastPackedSize
+
+        for i := 0; i <= int(K); i++ {
+            O[0][i] = O[1][i]
         }
     }
 
-    fmt.Println(O[K][N], 1)
+    file.Sync()
+    fmt.Println(O[1][K], 1)
+    //file.Close()
+
+    //fmt.Println(O[1])
+    //s := fmt.Sprint(O[1])
+    //ioutil.WriteFile("dpdatle.bin", []byte(O[0]), 0644)
+
+    /*
+
+    f, _ := os.Create("dptable.bin")
+    //f.WriteString(s)
+    //binary.Write(f, binary.LittleEndian, O[1])
+
+    var data = []int32{1, 3, 10}
+    fmt.Println(data)
+
+    var packedBuf bytes.Buffer
+
+    //z := gzip.NewWriter(f)
+    z := gzip.NewWriter(&packedBuf)
+
+    var buf bytes.Buffer
+    //buf := new(bytes.Buffer)
+    binary.Write(&buf, binary.LittleEndian, data)
+    fmt.Println(buf.Len())
+
+    buf.WriteTo(z)
+    z.Flush()
+    z.Close()
+
+    fmt.Println(packedBuf.Len())
+    //z.Write(buf)
+
+    var bufSize bytes.Buffer
+    var size int32 = int32(packedBuf.Len())
+    binary.Write(&bufSize, binary.LittleEndian, size)
+    bufSize.WriteTo(f)
+    //f.Sync()
+    packedBuf.WriteTo(f)
+
+    f.Sync()
+    f.Close()
+
+    // ----------------------
+    fmt.Println("now reading")
+
+    fin, _ := os.Open("dptable.bin")
+    var sizeIn int32
+    binary.Read(fin, binary.LittleEndian, &sizeIn)
+    fmt.Println(sizeIn)
+
+    var packedIn bytes.Buffer
+    packedIn.ReadFrom(io.LimitReader(fin, int64(sizeIn)))
+    fmt.Println("packenIn len", packedIn.Len())
+    fmt.Println(packedIn)
+
+    unz, _ := gzip.NewReader(&packedIn)
+    var unpacked bytes.Buffer
+    unpacked.ReadFrom(unz)
+    fmt.Println("unpacked len", unpacked.Len())
+    fmt.Println(unpacked)
+
+    var dataIn = make([]int32, 3)
+    binary.Read(&unpacked, binary.LittleEndian, dataIn)
+    fmt.Println(dataIn)
+
+    //fmt.Println(data)
+
+
+    */
+
+
+    //f.Close()
+    //io.WriteString(f, s)
+    //fmt.Fprint(f, fmt.Sprint(O[1][0]))
+
+    //io.WriteString(f, O[0])
+    //fmt.Fprint(f, O[0])
+    //g := gob.NewEncoder(f)
+    //g.Encode(O[0])
+
+    //fmt.Println(O[1][K], 1)
+    //fmt.Println(O[N][K], 1)
+    //fmt.Println(O[K][N], 1)
+    //fmt.Println(O[K][1], 1)
+
+    //return
+
+    // restore best set of items
     k = K
+    file.Seek(offsets[N], 0)
+    loadFromFile(file, sizes[N], &O[1])
+    for i = N; i > 0; i-- {
+        // preload first (previous) column
+        file.Seek(offsets[i-1], 0)
+        loadFromFile(file, sizes[i-1], &O[0])
+
+        if O[1][k] != O[0][k] {
+            x[i-1] = 1
+            k -= w[i-1]
+        }
+    }
+    /*
     for i = N; i > 0; i-- {
         if O[k][i] != O[k][i-1] {
             x[i-1] = 1
             k -= w[i-1]
         }
     }
+    */
+
+    // print best set
     for i = 0; i < N; i++ {
         if i == N-1 {
             fmt.Printf("%d", x[i])
@@ -232,6 +397,8 @@ func solveDynamicProgramming(K int32, v []int32, w []int32) {
         }
     }
     fmt.Printf("\n")
+
+    file.Close()
 }
 
 func solveFile(filename string, alg string) {
@@ -255,11 +422,12 @@ func solveFile(filename string, alg string) {
         fmt.Fscanf(file, "%d %d", &v[i], &w[i])
     }
 
-    fmt.Println("DP estimated memory usage, MB:", (int(K+1) * int(n+1) * 4 + int(n)) / 1024 / 1024)
-    return
     //fmt.Println(n, K)
     //fmt.Println(v, w)
     switch {
+    case alg == "estimate":
+        fmt.Println("DP estimated memory usage, MB:",
+                    (int(K+1) * int(n+1) * 4 + int(n)) / 1024 / 1024)
     case alg == "dp":
         solveDynamicProgramming(K, v, w)
     case alg == "bnb":
