@@ -2,9 +2,7 @@ package main
 
 import "sort"
 import "fmt"
-//import "encoding/gob"
 import "os"
-//import "io/ioutil"
 import "io"
 import "bytes"
 import "container/heap"
@@ -163,7 +161,6 @@ func solveBranchAndBound(K int32, v []int32, w []int32) {
 
     var maxvalue int32 = -1
     bestset := knapsackBranchAndBound(K, items, &maxvalue)
-
     fmt.Println(maxvalue, 1) // not always optimal (1), actually
 
     // restore indexes
@@ -278,92 +275,6 @@ func solveDynamicProgramming(K int32, v []int32, w []int32) {
 
     file.Sync()
     fmt.Println(O[1][K], 1)
-    //file.Close()
-
-    //fmt.Println(O[1])
-    //s := fmt.Sprint(O[1])
-    //ioutil.WriteFile("dpdatle.bin", []byte(O[0]), 0644)
-
-    /*
-
-    f, _ := os.Create("dptable.bin")
-    //f.WriteString(s)
-    //binary.Write(f, binary.LittleEndian, O[1])
-
-    var data = []int32{1, 3, 10}
-    fmt.Println(data)
-
-    var packedBuf bytes.Buffer
-
-    //z := gzip.NewWriter(f)
-    z := gzip.NewWriter(&packedBuf)
-
-    var buf bytes.Buffer
-    //buf := new(bytes.Buffer)
-    binary.Write(&buf, binary.LittleEndian, data)
-    fmt.Println(buf.Len())
-
-    buf.WriteTo(z)
-    z.Flush()
-    z.Close()
-
-    fmt.Println(packedBuf.Len())
-    //z.Write(buf)
-
-    var bufSize bytes.Buffer
-    var size int32 = int32(packedBuf.Len())
-    binary.Write(&bufSize, binary.LittleEndian, size)
-    bufSize.WriteTo(f)
-    //f.Sync()
-    packedBuf.WriteTo(f)
-
-    f.Sync()
-    f.Close()
-
-    // ----------------------
-    fmt.Println("now reading")
-
-    fin, _ := os.Open("dptable.bin")
-    var sizeIn int32
-    binary.Read(fin, binary.LittleEndian, &sizeIn)
-    fmt.Println(sizeIn)
-
-    var packedIn bytes.Buffer
-    packedIn.ReadFrom(io.LimitReader(fin, int64(sizeIn)))
-    fmt.Println("packenIn len", packedIn.Len())
-    fmt.Println(packedIn)
-
-    unz, _ := gzip.NewReader(&packedIn)
-    var unpacked bytes.Buffer
-    unpacked.ReadFrom(unz)
-    fmt.Println("unpacked len", unpacked.Len())
-    fmt.Println(unpacked)
-
-    var dataIn = make([]int32, 3)
-    binary.Read(&unpacked, binary.LittleEndian, dataIn)
-    fmt.Println(dataIn)
-
-    //fmt.Println(data)
-
-
-    */
-
-
-    //f.Close()
-    //io.WriteString(f, s)
-    //fmt.Fprint(f, fmt.Sprint(O[1][0]))
-
-    //io.WriteString(f, O[0])
-    //fmt.Fprint(f, O[0])
-    //g := gob.NewEncoder(f)
-    //g.Encode(O[0])
-
-    //fmt.Println(O[1][K], 1)
-    //fmt.Println(O[N][K], 1)
-    //fmt.Println(O[K][N], 1)
-    //fmt.Println(O[K][1], 1)
-
-    //return
 
     // restore best set of items
     k = K
@@ -379,14 +290,6 @@ func solveDynamicProgramming(K int32, v []int32, w []int32) {
             k -= w[i-1]
         }
     }
-    /*
-    for i = N; i > 0; i-- {
-        if O[k][i] != O[k][i-1] {
-            x[i-1] = 1
-            k -= w[i-1]
-        }
-    }
-    */
 
     // print best set
     for i = 0; i < N; i++ {
@@ -422,8 +325,6 @@ func solveFile(filename string, alg string) {
         fmt.Fscanf(file, "%d %d", &v[i], &w[i])
     }
 
-    //fmt.Println(n, K)
-    //fmt.Println(v, w)
     switch {
     case alg == "estimate":
         fmt.Println("DP estimated memory usage, MB:",
@@ -433,13 +334,11 @@ func solveFile(filename string, alg string) {
     case alg == "bnb":
         solveBranchAndBound(K, v, w)
     default:
-        //fmt.Println("Auto select algorithm (BnB for now)")
         solveBranchAndBound(K, v, w)
     }
 }
 
 func main() {
-    //fmt.Println("Solving file", os.Args[1])
     alg := "auto"
     if len(os.Args) > 2 {
         alg = os.Args[2]
