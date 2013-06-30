@@ -26,8 +26,9 @@ type Edge struct {
 }
 
 type Vertex struct {
-    color int32
-    E []int32 // list of connected edges
+    index int32 // original index
+    color int32 // vexter color
+    E []int32   // list of connected edges
 }
 
 type Edges []Edge
@@ -36,6 +37,11 @@ type Vertices []Vertex
 type Graph struct {
     E Edges
     V Vertices
+}
+
+type VertexOrder struct {
+    g *Graph
+    order []int32
 }
 
 // v -- global index of the vertex
@@ -55,6 +61,178 @@ type ByInt32 []int32
 func (self ByInt32) Len() int { return len(self) }
 func (self ByInt32) Less(i, j int) bool { return self[i] < self[j] }
 func (self ByInt32) Swap(i, j int) { self[i], self[j] = self[j], self[i] }
+
+type ByIndex VertexOrder
+func (self ByIndex) Len() int { return len(self.order) }
+func (self ByIndex) Less(i, j int) bool { return self.order[i] < self.order[j] }
+func (self ByIndex) Swap(i, j int) { self.order[i], self.order[j] = self.order[j], self.order[i] }
+
+type ByDegree VertexOrder
+func (self ByDegree) Len() int { return len(self.order) }
+func (self ByDegree) Less(i, j int) bool { return len(self.g.V[self.order[i]].E) < len(self.g.V[self.order[j]].E) }
+func (self ByDegree) Swap(i, j int) { self.order[i], self.order[j] = self.order[j], self.order[i] }
+
+// type ByDegree VertexOrder
+// func (self ByDegree) Len() int { return len(self) }
+// func (self ByDegree) Less(i, j int) bool { return len(self[i].E) < len(self[j].E) }
+// func (self ByDegree) Swap(i, j int) { self[i], self[j] = self[j], self[i] }
+
+func degree(g *Graph) int32 {
+    var maxDegree int32 = 0
+    for i := 0; i < len(g.V); i++ {
+        maxDegree = max(maxDegree, int32(len(g.V[i].E)))
+    }
+    return maxDegree
+}
+
+func (g *Graph) chromaticNumber() int32 {
+    var maxChNum int32 = 0
+    for i := 0; i < len(g.V); i++ {
+        maxChNum = max(maxChNum, int32(g.V[i].color))
+    }
+    return maxChNum
+}
+
+func (g *Graph) vertexNeighborColors(i int32) []int32 {
+    neibColors := make([]int32, 0)
+    // get colors of all neighbors
+    for j := 0; j < len(g.V[i].E); j++ {
+        neibVertex := g.V[g.otherVertex(i, int32(j))]
+        neibColors = append(neibColors, neibVertex.color)
+    }
+    return neibColors
+}
+
+func minUnusedColor(colors *[]int32) int32 {
+    sort.Sort(ByInt32(*colors))
+    //fmt.Println(*colors)
+
+    if len(*colors) == 1 {
+        return (*colors)[0] + 1
+    }
+
+    for i := 0; i < len(*colors) - 1; i++ {
+        if (*colors)[i+1] - (*colors)[i] > 1 {
+            return (*colors)[i] + 1
+        }
+    }
+
+    return (*colors)[len(*colors) - 1] + 1
+}
+
+func (g *Graph) assignVertexColor(i int32) {
+    neibColors := g.vertexNeighborColors(i)
+    // find min unused color
+    min_color := minUnusedColor(&neibColors)
+    g.V[i].color = min_color
+    //fmt.Println(min_color)
+}
+
+func (g *Graph) printColors() {
+    for i := 0; i < len(g.V); i++ {
+        if (i != len(g.V) - 1) {
+            //fmt.Printf("%d (%d) ", g.V[i].color - 1, g.V[i].index)
+            fmt.Printf("%d ", g.V[i].color - 1)
+        } else {
+            fmt.Printf("%d", g.V[i].color - 1)
+        }
+    }
+    fmt.Printf("\n")
+}
+
+func (g *Graph) solveGreedySimple() {
+    //NE := len(g.E)
+    NV := len(g.V)
+    //D := degree(&g)
+
+    ord := make([]int32, NV)
+    for i := 0; i < NV; i++ {
+        ord[i] = int32(i)
+    }
+    vertexOrder := VertexOrder{g, ord}
+
+    sort.Sort(sort.Reverse(ByDegree(vertexOrder)))
+
+    //sort.Sort(sort.Reverse(ByDegree(g.V)))
+    //sort.Sort(ByDegree(g.V))
+    //sort.Reverse(ByDegree(g.V))
+
+    //fmt.Println(D)
+
+    for i := 0; i < NV; i++ {
+        g.assignVertexColor(vertexOrder.order[i])
+    }
+
+    //sort.Sort(ByIndex(g.V))
+    fmt.Println(g.chromaticNumber(), 0)
+    g.printColors()
+}
+
+func solveFile(filename string, alg string) {
+    file, err := os.Open(filename)
+    if err != nil {
+        fmt.Println("Cannot open file:", filename, err)
+        return
+    }
+    defer file.Close()
+
+    var NV, NE int32
+    var i, v, u int32
+
+    fmt.Fscanf(file, "%d %d", &NV, &NE)
+
+    //v := make([]int32, n)
+    E := make([]Edge, NE)
+    V := make([]Vertex, NV)
+
+    for i = 0; i < NV; i++ {
+        V[i] = Vertex{int32(i), 0, make([]int32, 0)}
+    }
+
+    for i = 0; i < NE; i++ {
+        fmt.Fscanf(file, "%d %d", &v, &u)
+        E[i] = Edge{v, u}
+        V[v].E = append(V[v].E, i)
+        V[u].E = append(V[u].E, i)
+    }
+
+    g := Graph{E, V}
+
+    g.solveGreedySimple()
+
+    //fmt.Println(E)
+    //fmt.Println(V)
+
+    // switch {
+    // case alg == "estimate":
+    //     fmt.Println("DP estimated memory usage, MB:",
+    //                 (int(K+1) * int(n+1) * 4 + int(n)) / 1024 / 1024)
+    // case alg == "dp":
+    //     solveDynamicProgramming(K, v, w)
+    // case alg == "bnb":
+    //     solveBranchAndBound(K, v, w)
+    // default:
+    //     solveBranchAndBound(K, v, w)
+    // }
+}
+
+func main() {
+    alg := "auto"
+    if len(os.Args) > 2 {
+        alg = os.Args[2]
+    }
+    solveFile(os.Args[1], alg)
+
+    /*
+    c1 := []int32{1, 2, 3}
+    fmt.Println(minUnusedColor(&c1))
+    c2 := []int32{0, 2, 3}
+    fmt.Println(minUnusedColor(&c2))
+    c3 := []int32{1, 2, 3, 4, 6, 7, 8, 9}
+    fmt.Println(minUnusedColor(&c3))
+    */
+}
+
 
 // type Node struct {
 //     index int32   // index in the input data
@@ -340,144 +518,3 @@ func (self ByInt32) Swap(i, j int) { self[i], self[j] = self[j], self[i] }
 //     file.Close()
 // }
 
-func degree(g *Graph) int32 {
-    var maxDegree int32 = 0
-    for i := 0; i < len(g.V); i++ {
-        maxDegree = max(maxDegree, int32(len(g.V[i].E)))
-    }
-    return maxDegree
-}
-
-func (g *Graph) chromaticNumber() int32 {
-    var maxChNum int32 = 0
-    for i := 0; i < len(g.V); i++ {
-        maxChNum = max(maxChNum, int32(g.V[i].color))
-    }
-    return maxChNum
-}
-
-func (g *Graph) vertexNeighborColors(i int) []int32 {
-    neibColors := make([]int32, 0)
-    // get colors of all neighbors
-    for j := 0; j < len(g.V[i].E); j++ {
-        neibVertex := g.V[g.otherVertex(int32(i), int32(j))]
-        neibColors = append(neibColors, neibVertex.color)
-    }
-    return neibColors
-}
-
-func minUnusedColor(colors *[]int32) int32 {
-    sort.Sort(ByInt32(*colors))
-    //fmt.Println(*colors)
-
-    if len(*colors) == 1 {
-        return (*colors)[0] + 1
-    }
-
-    for i := 0; i < len(*colors) - 1; i++ {
-        if (*colors)[i+1] - (*colors)[i] > 1 {
-            return (*colors)[i] + 1
-        }
-    }
-
-    return (*colors)[len(*colors) - 1] + 1
-}
-
-func (g *Graph) assignVertexColor(i int) {
-    neibColors := g.vertexNeighborColors(i)
-    // find min unused color
-    min_color := minUnusedColor(&neibColors)
-    g.V[i].color = min_color
-    //fmt.Println(min_color)
-}
-
-func (g *Graph) printColors() {
-    for i := 0; i < len(g.V); i++ {
-        if (i != len(g.V) - 1) {
-            fmt.Printf("%d ", g.V[i].color - 1)
-        } else {
-            fmt.Printf("%d", g.V[i].color - 1)
-        }
-    }
-    fmt.Printf("\n")
-}
-
-func (g *Graph) solveGreedySimple() {
-    //NE := len(g.E)
-    NV := len(g.V)
-    //D := degree(&g)
-
-    //fmt.Println(D)
-
-    for i := 0; i < NV; i++ {
-        g.assignVertexColor(i)
-    }
-
-    fmt.Println(g.chromaticNumber(), 0)
-    g.printColors()
-}
-
-func solveFile(filename string, alg string) {
-    file, err := os.Open(filename)
-    if err != nil {
-        fmt.Println("Cannot open file:", filename, err)
-        return
-    }
-    defer file.Close()
-
-    var NV, NE int32
-    var i, v, u int32
-
-    fmt.Fscanf(file, "%d %d", &NV, &NE)
-
-    //v := make([]int32, n)
-    E := make([]Edge, NE)
-    V := make([]Vertex, NV)
-
-    for i = 0; i < NV; i++ {
-        V[i] = Vertex{0, make([]int32, 0)}
-    }
-
-    for i = 0; i < NE; i++ {
-        fmt.Fscanf(file, "%d %d", &v, &u)
-        E[i] = Edge{v, u}
-        V[v].E = append(V[v].E, i)
-        V[u].E = append(V[u].E, i)
-    }
-
-    g := Graph{E, V}
-
-    g.solveGreedySimple()
-
-    //fmt.Println(E)
-    //fmt.Println(V)
-
-    // switch {
-    // case alg == "estimate":
-    //     fmt.Println("DP estimated memory usage, MB:",
-    //                 (int(K+1) * int(n+1) * 4 + int(n)) / 1024 / 1024)
-    // case alg == "dp":
-    //     solveDynamicProgramming(K, v, w)
-    // case alg == "bnb":
-    //     solveBranchAndBound(K, v, w)
-    // default:
-    //     solveBranchAndBound(K, v, w)
-    // }
-}
-
-func main() {
-    alg := "auto"
-    if len(os.Args) > 2 {
-        alg = os.Args[2]
-    }
-    solveFile(os.Args[1], alg)
-
-    /*
-    c1 := []int32{1, 2, 3}
-    fmt.Println(minUnusedColor(&c1))
-    c2 := []int32{0, 2, 3}
-    fmt.Println(minUnusedColor(&c2))
-    c3 := []int32{1, 2, 3, 4, 6, 7, 8, 9}
-    fmt.Println(minUnusedColor(&c3))
-    */
-}
