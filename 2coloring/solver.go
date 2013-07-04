@@ -40,12 +40,28 @@ type Graph struct {
     V Vertices
 }
 
+type VarHeuristic int
+type ValHeuristic int
+
+const (
+    VAR_BRUTE VarHeuristic = iota
+    VAR_MRV
+    VAR_MCV
+)
+
+const (
+    VAL_BRUTE ValHeuristic = iota
+    VAL_LCV
+)
+
 // additional information (besides the graph), required for CSP
 type CSPContext struct {
     g *Graph
     domain [][]int32 // possible values (colors) for each variable (vertex)
-    numColors int32
-    currentUnassignedVertex int
+    numColors int32  // target number of colors (does not change)
+    currentUnassignedVertex int // current vertex in recursive solution calls
+    varHeuristic VarHeuristic
+    valHeuristic ValHeuristic
 }
 
 // save vertex order without reordering graph vertices
@@ -238,25 +254,71 @@ func (g *Graph) valid() bool {
     return true
 }
 
+// func (c *CSPContext) tryNextVal(vertex int) bool {
+//     //fmt.Println("Trying vertex", vertex)
+//     // try all colors for current vertex
+//     for color := 0; color < int(c.numColors); color++ {
+//         c.g.V[vertex].color = c.domain[vertex][color]
+//         //fmt.Println(c.g)
+//         //c.g.printSolution()
+//         if c.solve() {
+//             return true
+//         }
+//         c.currentUnassignedVertex -= 1
+//     }
+// 
+//     return false
+// }
+// 
+// func (c *CSPContext) tryNextVar() bool {
+//     switch {
+//     case c.varHeuristic == VAR_BRUTE:
+//         vertex := c.currentUnassignedVertex
+//         c.currentUnassignedVertex += 1
+//         if c.tryNextVal(vertex) {
+//             return true
+//         }
+//         c.currentUnassignedVertex -= 1
+// 
+//     case c.varHeuristic == VAR_MRV:
+//         fmt.Println("VAR_MRV not implemented")
+// 
+//     case c.varHeuristic == VAR_MCV:
+//         fmt.Println("VAR_MCV not implemented")
+//     }
+// 
+//     return false
+// }
+
 func (c *CSPContext) solve() bool {
-    // all var assigned?
+    // all vars assigned?
     if c.currentUnassignedVertex >= c.g.NV() {
         return c.g.valid()
     }
 
+    // TODO: support MRV (minimum remaining values):
+    // 1. use maps instead of lists for domains (faster deletion)
+    // 2. propagate domain changes to neighbors after assigning
+    //    color to the vertex
+    // 3. select MRV vertex (scan all vertices and select min)
+
+    // select var
     vertex := c.currentUnassignedVertex
-    //fmt.Println("Trying vertex", vertex)
-    // try all colors for current vertex
+    c.currentUnassignedVertex += 1
+
     for color := 0; color < int(c.numColors); color++ {
         c.g.V[vertex].color = c.domain[vertex][color]
-        c.currentUnassignedVertex += 1
         //fmt.Println(c.g)
         //c.g.printSolution()
         if c.solve() {
             return true
         }
-        c.currentUnassignedVertex -= 1
     }
+
+    // unselect var
+    c.currentUnassignedVertex -= 1
+    c.g.V[vertex].color = 0
+
     return false
 }
 
@@ -265,7 +327,7 @@ func (g *Graph) solveCSP() {
     nColors := g.degree() + 1
     fmt.Println("Solving for", nColors, "colors")
 
-    csp := CSPContext{g, nil, nColors, 0}
+    csp := CSPContext{g, nil, nColors, 0, VAR_BRUTE, VAL_BRUTE}
     csp.init(int(nColors))
     fmt.Println(csp)
     if csp.solve() {
