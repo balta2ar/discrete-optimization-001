@@ -34,11 +34,21 @@ type Vertex struct {
 type Edges []Edge
 type Vertices []Vertex
 
+// graph contains of edges and vertices
 type Graph struct {
     E Edges
     V Vertices
 }
 
+// additional information (besides the graph), required for CSP
+type CSPContext struct {
+    g *Graph
+    domain [][]int32 // possible values (colors) for each variable (vertex)
+    numColors int32
+    currentUnassignedVertex int
+}
+
+// save vertex order without reordering graph vertices
 type VertexOrder struct {
     g *Graph
     order []int32
@@ -77,7 +87,10 @@ func (self ByDegree) Swap(i, j int) { self.order[i], self.order[j] = self.order[
 // func (self ByDegree) Less(i, j int) bool { return len(self[i].E) < len(self[j].E) }
 // func (self ByDegree) Swap(i, j int) { self[i], self[j] = self[j], self[i] }
 
-func degree(g *Graph) int32 {
+func (g *Graph) NV() int { return len(g.V) }
+func (g *Graph) NE() int { return len(g.E) }
+
+func (g *Graph) degree() int32 {
     var maxDegree int32 = 0
     for i := 0; i < len(g.V); i++ {
         maxDegree = max(maxDegree, int32(len(g.V[i].E)))
@@ -140,6 +153,12 @@ func (g *Graph) printColors() {
     fmt.Printf("\n")
 }
 
+func (g *Graph) printSolution() {
+    fmt.Println(g.chromaticNumber(), 0)
+    g.printColors()
+}
+
+// greedy approach
 func (g *Graph) solveGreedySimple() {
     //NE := len(g.E)
     NV := len(g.V)
@@ -164,8 +183,95 @@ func (g *Graph) solveGreedySimple() {
     }
 
     //sort.Sort(ByIndex(g.V))
-    fmt.Println(g.chromaticNumber(), 0)
-    g.printColors()
+
+    //fmt.Println(g.chromaticNumber(), 0)
+    //g.printColors()
+    g.printSolution()
+}
+
+//
+// CSP
+//
+
+func (c *CSPContext) init(nColors int) {
+    c.domain = make([][]int32, c.g.NV())
+    for i := 0; i < c.g.NV(); i++ {
+        c.domain[i] = make([]int32, nColors)
+        for j := 0; j < nColors; j++ {
+            c.domain[i][j] = int32(j + 1)
+        }
+    }
+    c.currentUnassignedVertex = 0
+}
+
+func (v Vertex) numSameColorNeighbors(g *Graph) int {
+    num := 0
+    // check all neighbor vertices
+    for i := 0; i < len(v.E); i++ {
+        otherVertexIndex := g.otherVertex(v.index, int32(i))
+        if g.V[otherVertexIndex].color == v.color {
+            num += 1
+        }
+    }
+    return num
+}
+
+// check if vertex is valid
+func (v Vertex) valid(g *Graph) bool {
+    // unassigned color?
+    if v.color == 0 {
+        return false
+    }
+
+    return v.numSameColorNeighbors(g) == 0
+}
+
+// check if graph is valid
+func (g *Graph) valid() bool {
+    // check if all vertices are valid
+    for i := 0; i < g.NV(); i++ {
+        if !g.V[i].valid(g) {
+            return false
+        }
+    }
+
+    return true
+}
+
+func (c *CSPContext) solve() bool {
+    // all var assigned?
+    if c.currentUnassignedVertex >= c.g.NV() {
+        return c.g.valid()
+    }
+
+    vertex := c.currentUnassignedVertex
+    //fmt.Println("Trying vertex", vertex)
+    // try all colors for current vertex
+    for color := 0; color < int(c.numColors); color++ {
+        c.g.V[vertex].color = c.domain[vertex][color]
+        c.currentUnassignedVertex += 1
+        //fmt.Println(c.g)
+        //c.g.printSolution()
+        if c.solve() {
+            return true
+        }
+        c.currentUnassignedVertex -= 1
+    }
+    return false
+}
+
+// contraint-satisfaction approach
+func (g *Graph) solveCSP() {
+    nColors := g.degree() + 1
+    fmt.Println("Solving for", nColors, "colors")
+
+    csp := CSPContext{g, nil, nColors, 0}
+    csp.init(int(nColors))
+    fmt.Println(csp)
+    if csp.solve() {
+        fmt.Println("SOLUTION")
+        g.printSolution()
+    }
 }
 
 func solveFile(filename string, alg string) {
@@ -198,22 +304,24 @@ func solveFile(filename string, alg string) {
 
     g := Graph{E, V}
 
-    g.solveGreedySimple()
+    //g.solveGreedySimple()
+    //g.solveCSP()
 
     //fmt.Println(E)
     //fmt.Println(V)
 
-    // switch {
-    // case alg == "estimate":
-    //     fmt.Println("DP estimated memory usage, MB:",
-    //                 (int(K+1) * int(n+1) * 4 + int(n)) / 1024 / 1024)
-    // case alg == "dp":
-    //     solveDynamicProgramming(K, v, w)
-    // case alg == "bnb":
-    //     solveBranchAndBound(K, v, w)
-    // default:
-    //     solveBranchAndBound(K, v, w)
-    // }
+    switch {
+    case alg == "estimate":
+        fmt.Println("Estimation is not implemented in this assignment")
+        //fmt.Println("DP estimated memory usage, MB:",
+        //            (int(K+1) * int(n+1) * 4 + int(n)) / 1024 / 1024)
+    case alg == "greedy":
+        g.solveGreedySimple()
+    case alg == "csp":
+        g.solveCSP()
+    default:
+        g.solveCSP()
+    }
 }
 
 func main() {
