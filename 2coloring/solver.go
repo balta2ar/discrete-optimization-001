@@ -3,6 +3,7 @@ package main
 import "sort"
 import "fmt"
 import "os"
+//import "container/list"
 //import "io"
 //import "bytes"
 //import "container/heap"
@@ -57,7 +58,8 @@ const (
 // additional information (besides the graph), required for CSP
 type CSPContext struct {
     g *Graph
-    domain [][]int32 // possible values (colors) for each variable (vertex)
+    //domain [][]int32 // possible values (colors) for each variable (vertex)
+    domains []map[int32]bool // possible values (colors) for each variable (vertex)
     numColors int32  // target number of colors (does not change)
     currentUnassignedVertex int // current vertex in recursive solution calls
     varHeuristic VarHeuristic
@@ -210,11 +212,11 @@ func (g *Graph) solveGreedySimple() {
 //
 
 func (c *CSPContext) init(nColors int) {
-    c.domain = make([][]int32, c.g.NV())
+    c.domains = make([]map[int32]bool, c.g.NV())
     for i := 0; i < c.g.NV(); i++ {
-        c.domain[i] = make([]int32, nColors)
+        c.domains[i] = make(map[int32]bool)
         for j := 0; j < nColors; j++ {
-            c.domain[i][j] = int32(j + 1)
+            c.domains[i][int32(j + 1)] = true
         }
     }
     c.currentUnassignedVertex = 0
@@ -290,6 +292,48 @@ func (g *Graph) valid() bool {
 //     return false
 // }
 
+func (c *CSPContext) forwardCheckVertexColor(vertex int32, color int32) {
+        for j := 0; j < len(c.g.V[vertex].E); j++ {
+        neibVertexIndex := c.g.otherVertex(vertex, int32(j))
+        delete(c.domains[neibVertexIndex], color)
+        //neibColors = append(neibColors, neibVertex.color)
+    }
+}
+
+func (c *CSPContext) getMRVVertex() int32 {
+    // there must be unset vertices
+    if c.currentUnassignedVertex >= c.g.NV() {
+        panic("Call to getMRVVertex with no unset variables")
+        return -1
+    }
+
+    var vertex int32 = -1
+
+    // scan all domains, find the smallest one
+    // (number of vertices == number of domains)
+    for i := 0; i < c.g.NV(); i++ {
+        // only check unset vertices
+        if c.g.V[i].color != 0 {
+            continue
+        }
+
+        // assign vertex if not yet assigned
+        if vertex == -1 {
+            vertex = int32(i)
+        }
+
+        if len(c.domains[i]) < len(c.domains[vertex]) {
+            vertex = int32(i)
+        }
+    }
+
+    if vertex == -1 {
+        panic("getMRVVertex could not find the vertex")
+        return -1
+    }
+    return vertex;
+}
+
 func (c *CSPContext) solve() bool {
     // all vars assigned?
     if c.currentUnassignedVertex >= c.g.NV() {
@@ -297,23 +341,47 @@ func (c *CSPContext) solve() bool {
     }
 
     // TODO: support MRV (minimum remaining values):
-    // 1. use maps instead of lists for domains (faster deletion)
-    // 2. propagate domain changes to neighbors after assigning
+    // 1.+use maps instead of lists for domains (faster deletion)
+    // 2.+forward check domain changes to neighbors after assigning
     //    color to the vertex
-    // 3. select MRV vertex (scan all vertices and select min)
+    // 3.+select MRV vertex (scan all vertices and select min)
+    // 4. try LCV (for values)
+    // 5. try constraint propagation (stronger version of forward checking)
 
     // select var
-    vertex := c.currentUnassignedVertex
+    vertex := c.getMRVVertex() //c.currentUnassignedVertex
     c.currentUnassignedVertex += 1
 
+    // save a copy of state of all current domains
+    savedDomains := pushDomains(c.domains)
+
+    for color, _ := range c.domains[vertex] {
+        // set another color
+        c.g.V[vertex].color = color
+
+        // propagate color. this will change current domains state
+        c.forwardCheckVertexColor(int32(vertex), color)
+
+        //fmt.Println(c.g)
+        //c.g.printSolution()
+        if c.solve() {
+            return true
+        }
+
+        // restore domains state to previous
+        popDomains(&c.domains, &savedDomains)
+    }
+
+    /*
     for color := 0; color < int(c.numColors); color++ {
-        c.g.V[vertex].color = c.domain[vertex][color]
+        c.g.V[vertex].color = c.domain[vertex][int32(color)]
         //fmt.Println(c.g)
         //c.g.printSolution()
         if c.solve() {
             return true
         }
     }
+    */
 
     // unselect var
     c.currentUnassignedVertex -= 1
@@ -324,14 +392,16 @@ func (c *CSPContext) solve() bool {
 
 // contraint-satisfaction approach
 func (g *Graph) solveCSP() {
-    nColors := g.degree() + 1
-    fmt.Println("Solving for", nColors, "colors")
+    //nColors := g.degree() + 1
+    nColors := int32(78)
+
+    //fmt.Println("Solving for", nColors, "colors")
 
     csp := CSPContext{g, nil, nColors, 0, VAR_BRUTE, VAL_BRUTE}
     csp.init(int(nColors))
-    fmt.Println(csp)
+    //fmt.Println(csp)
     if csp.solve() {
-        fmt.Println("SOLUTION")
+        //fmt.Println("SOLUTION")
         g.printSolution()
     }
 }
@@ -386,12 +456,56 @@ func solveFile(filename string, alg string) {
     }
 }
 
+func pushDomains(domains []map[int32]bool) []map[int32]bool {
+    newDomains := make([]map[int32]bool, len(domains))
+    for i := 0; i < len(domains); i++ {
+        newDomains[i] = make(map[int32]bool)
+        for k, v := range domains[i] {
+            newDomains[i][k] = v
+        }
+    }
+    return newDomains
+}
+
+func popDomains(dst *[]map[int32]bool, src *[]map[int32]bool) {
+    newDomains := pushDomains(*src)
+    *dst = newDomains
+}
+
+func test(alg string) {
+    N := 2
+    d := make([]map[int32]bool, N)
+
+    d[0] = make(map[int32]bool)
+    d[1] = make(map[int32]bool)
+
+    d[0][1] = true
+    d[0][2] = true
+    d[0][3] = true
+
+    d[1][2] = true
+
+    saved := pushDomains(d)
+
+    d[1][1] = true
+    d[1][3] = true
+
+    fmt.Println(d)
+    fmt.Println(saved)
+
+    popDomains(&d, &saved)
+
+    fmt.Println(d)
+    fmt.Println(len(d[0]))
+}
+
 func main() {
     alg := "auto"
     if len(os.Args) > 2 {
         alg = os.Args[2]
     }
     solveFile(os.Args[1], alg)
+    //test(alg)
 
     /*
     c1 := []int32{1, 2, 3}
