@@ -16,8 +16,9 @@ def solveIt(inputData):
 
     # Runs the command: java Solver -file=tmp.data
 
-    process = Popen(['go', 'run', 'solver.go', tmpFileName],
-                    stdout=PIPE)
+    #process = Popen(['go', 'run', 'solver.go', tmpFileName], stdout=PIPE)
+    #process = Popen(['./wrapper.sh', tmpFileName], stdout=PIPE)
+    process = Popen(['./wrapper.sh', 'data/gc_500_1'], stdout=PIPE)
     (stdout, stderr) = process.communicate()
 
     # removes the temporay file

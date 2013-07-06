@@ -71,6 +71,13 @@ type VertexOrder struct {
     order []int32
 }
 
+type LCVColorPair [2]int32
+
+type ByLCVColor []LCVColorPair
+func (self ByLCVColor) Len() int { return len(self) }
+func (self ByLCVColor) Less(i, j int) bool { return self[i][1] < self[j][1] }
+func (self ByLCVColor) Swap(i, j int) { self[i], self[j] = self[j], self[i] }
+
 // v -- global index of the vertex
 // e -- local index of the edge in vertex edge list
 // return global index of the other vertex
@@ -218,15 +225,16 @@ func (c *CSPContext) init(nColors int) {
             c.domains[i][int32(j + 1)] = true
         }
     }
+    //fmt.Println(c.domains)
     c.currentUnassignedVertex = 0
 }
 
-func (v Vertex) numSameColorNeighbors(g *Graph) int {
+func (v Vertex) numSameColorNeighbors(g *Graph, color int32) int {
     num := 0
     // check all neighbor vertices
     for i := 0; i < len(v.E); i++ {
         otherVertexIndex := g.otherVertex(v.index, int32(i))
-        if g.V[otherVertexIndex].color == v.color {
+        if g.V[otherVertexIndex].color == color {
             num += 1
         }
     }
@@ -240,7 +248,7 @@ func (v Vertex) valid(g *Graph) bool {
         return false
     }
 
-    return v.numSameColorNeighbors(g) == 0
+    return v.numSameColorNeighbors(g, v.color) == 0
 }
 
 // check if graph is valid
@@ -263,6 +271,7 @@ func (c *CSPContext) forwardCheckVertexColor(vertex int32, color int32) {
     }
 }
 
+// select Minimum Remaining Values vertex
 func (c *CSPContext) getMRVVertex() int32 {
     // there must be unset vertices
     if c.currentUnassignedVertex >= c.g.NV() {
@@ -291,13 +300,59 @@ func (c *CSPContext) getMRVVertex() int32 {
     }
 
     if vertex == -1 {
-        panic("getMRVVertex could not find the vertex")
+        panic("getMRVVertex: Could not find the vertex")
         return -1
     }
     return vertex;
 }
 
-func (c *CSPContext) solve() bool {
+// select Least Constraining Value color
+func (c *CSPContext) getLCVColor(vertex int32) int32 {
+    if len(c.domains[vertex]) == 0 {
+        panic(fmt.Sprintf("getLCVColor: No colors for vertex %d\n", vertex))
+        return -1
+    }
+
+    var lcvColor int32 = int32(-1)
+    lcvValue := -1
+    for color, _ := range c.domains[vertex] {
+        lcv := c.g.V[vertex].numSameColorNeighbors(c.g, color)
+
+        if (lcvColor == -1) || (lcv < lcvValue) {
+            lcvColor = color
+            lcvValue = lcv
+        }
+    }
+
+    return lcvColor
+}
+
+// return visit order for colors according to LCV heuristic
+func (c *CSPContext) getLCVColorOrder(vertex int32) []LCVColorPair {
+    ND := len(c.domains[vertex])
+    pairs := make([]LCVColorPair, ND)
+
+    i := 0
+    for color, _ := range c.domains[vertex] {
+        // color
+        pairs[i][0] = color
+        // cv value
+        pairs[i][1] = int32(c.g.V[vertex].numSameColorNeighbors(c.g, color))
+        i += 1
+    }
+    //fmt.Println(pairs)
+    sort.Sort(ByLCVColor(pairs))
+    return pairs
+
+    // colors := make([]int32, ND)
+    // for i := 0; i < ND; i++ {
+    //     colors[i] = pairs[i][0]
+    // }
+
+    // return colors
+}
+
+func (c *CSPContext) solve(indent int) bool {
     // all vars assigned?
     if c.currentUnassignedVertex >= c.g.NV() {
         return c.g.valid()
@@ -308,31 +363,57 @@ func (c *CSPContext) solve() bool {
     // 2.+forward check domain changes to neighbors after assigning
     //    color to the vertex
     // 3.+select MRV vertex (scan all vertices and select min)
-    // 4. try LCV (for values)
+    // 4.+try LCV (for values)
     // 5. try constraint propagation (stronger version of forward checking)
 
     // select var
     vertex := c.getMRVVertex() //c.currentUnassignedVertex
+    //fmt.Println(indent, "Selected vertex", vertex)
+
+    // no more values to try?
+    if len(c.domains[vertex]) == 0 {
+        //fmt.Println(indent, "Selected vertex", vertex, "is empty")
+        return false
+    }
+
     c.currentUnassignedVertex += 1
 
     // save a copy of state of all current domains
     savedDomains := pushDomains(c.domains)
 
-    for color, _ := range c.domains[vertex] {
-        // set another color
-        c.g.V[vertex].color = color
+    // now enumerate colors of the vertex
+    if c.valHeuristic == VAL_BRUTE {
+        for color, _ := range c.domains[vertex] {
+            // set another color
+            c.g.V[vertex].color = color
 
-        // propagate color. this will change current domains state
-        c.forwardCheckVertexColor(int32(vertex), color)
+            // propagate color. this will change current domains state
+            c.forwardCheckVertexColor(int32(vertex), color)
 
-        //fmt.Println(c.g)
-        //c.g.printSolution()
-        if c.solve() {
-            return true
+            //fmt.Println(c.g)
+            //c.g.printSolution()
+            if c.solve(indent + 1) {
+                return true
+            }
+
+            // restore domains state to previous
+            popDomains(&c.domains, &savedDomains)
         }
+    } else if c.valHeuristic == VAL_LCV {
+        lcvPairs := c.getLCVColorOrder(vertex)
+        //fmt.Println(lcvPairs)
+        //return false
 
-        // restore domains state to previous
-        popDomains(&c.domains, &savedDomains)
+        for color, _ := range lcvPairs {
+            //color, _ := c.domains[vertex][order[i][0]]
+
+            c.g.V[vertex].color = int32(color)
+            c.forwardCheckVertexColor(int32(vertex), int32(color))
+            if c.solve(indent + 1) {
+                return true
+            }
+            popDomains(&c.domains, &savedDomains)
+        }
     }
 
     /*
@@ -359,7 +440,7 @@ func (g *Graph) solveCSP(nColors int32) int {
 
     csp := CSPContext{g, nil, nColors, 0, VAR_BRUTE, VAL_BRUTE}
     csp.init(int(nColors))
-    if csp.solve() {
+    if csp.solve(0) {
         g.printSolution()
         return 0
     }
