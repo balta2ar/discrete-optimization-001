@@ -4,6 +4,7 @@ import "strconv"
 import "sort"
 import "fmt"
 import "os"
+import "container/list"
 
 // functions which Go developers should have implemented but happened
 // to be too lazy and religious to do so
@@ -82,11 +83,14 @@ func (self ByLCVColor) Swap(i, j int) { self[i], self[j] = self[j], self[i] }
 // e -- local index of the edge in vertex edge list
 // return global index of the other vertex
 func (self *Graph) otherVertex(v int32, e int32) int32 {
+    //fmt.Println("otherVertex", v, e)
     V := self.V[v]
     E := self.E[V.E[e]]
     if E.v == v {
+        //fmt.Println("otherVertex done", v, e)
         return E.u
     } else {
+        //fmt.Println("otherVertex done", v, e)
         return E.v
     }
 }
@@ -264,11 +268,62 @@ func (g *Graph) valid() bool {
 }
 
 func (c *CSPContext) forwardCheckVertexColor(vertex int32, color int32) {
-        for j := 0; j < len(c.g.V[vertex].E); j++ {
+    for j := 0; j < len(c.g.V[vertex].E); j++ {
         neibVertexIndex := c.g.otherVertex(vertex, int32(j))
         delete(c.domains[neibVertexIndex], color)
         //neibColors = append(neibColors, neibVertex.color)
     }
+}
+
+func (c *CSPContext) arcConsistency3(vertex int32) {
+    queue := list.New() // queue of edges to check
+
+    //fmt.Println("start", vertex)
+
+    // add outgoing edges of the current vertex
+    for i, _ := range c.g.V[vertex].E {
+        edgeOut := Edge{vertex, c.g.otherVertex(vertex, int32(i))}
+        edgeIn := Edge{c.g.otherVertex(vertex, int32(i)), vertex}
+        queue.PushBack(edgeOut)
+        queue.PushBack(edgeIn)
+    }
+
+    for queue.Front() != nil {
+        e := queue.Front().Value.(Edge)
+        queue.Remove(queue.Front())
+
+        if c.removeInconsistentValues(e) {
+            edgesOut := c.g.V[e.u].E // outgoing edge indexes
+            for i := 0; i < len(edgesOut); i++ {
+                // add each outgoing edge
+                other := c.g.otherVertex(e.u, edgesOut[i])
+                if other != e.v {
+                    candidateEdge := Edge{other, e.u}
+                    queue.PushBack(candidateEdge)
+                }
+            }
+        }
+    }
+}
+
+func (c *CSPContext) removeInconsistentValues(e Edge) bool {
+    removed := false
+
+    for x, _ := range c.domains[e.u] {
+        otherDomain := c.domains[e.v] // domain of other vertex (v)
+        if len(otherDomain) == 1 {    // only one color in the other domain
+            // is it our color? if so, this is bad, we can't satisfy the
+            // constraint
+            for otherColor, _ := range otherDomain {
+                if otherColor == c.g.V[e.u].color {
+                    delete(c.domains[e.u], x)
+                    removed = true
+                }
+            }
+        }
+    }
+
+    return removed
 }
 
 // select Minimum Remaining Values vertex
@@ -338,18 +393,14 @@ func (c *CSPContext) getLCVColorOrder(vertex int32) []LCVColorPair {
         pairs[i][0] = color
         // cv value
         pairs[i][1] = int32(c.g.V[vertex].numSameColorNeighbors(c.g, color))
+        if pairs[i][1] > 0 {
+            fmt.Println("numSameColorNeighbors for", vertex, "is", pairs[i][1])
+        }
         i += 1
     }
     //fmt.Println(pairs)
     sort.Sort(ByLCVColor(pairs))
     return pairs
-
-    // colors := make([]int32, ND)
-    // for i := 0; i < ND; i++ {
-    //     colors[i] = pairs[i][0]
-    // }
-
-    // return colors
 }
 
 func (c *CSPContext) solve(indent int) bool {
@@ -364,7 +415,11 @@ func (c *CSPContext) solve(indent int) bool {
     //    color to the vertex
     // 3.+select MRV vertex (scan all vertices and select min)
     // 4.+try LCV (for values)
-    // 5. try constraint propagation (stronger version of forward checking)
+    // 5.+try constraint propagation (stronger version of forward checking)
+    //    AC3
+    // 6. local search (min conflicts)
+    // 7. backjumping (conflict-directed)
+    // 8. constraint learning (?)
 
     // select var
     vertex := c.getMRVVertex() //c.currentUnassignedVertex
@@ -381,14 +436,19 @@ func (c *CSPContext) solve(indent int) bool {
     // save a copy of state of all current domains
     savedDomains := pushDomains(c.domains)
 
+    //c.arcConsistency3(int32(vertex))
+
     // now enumerate colors of the vertex
     if c.valHeuristic == VAL_BRUTE {
         for color, _ := range c.domains[vertex] {
             // set another color
             c.g.V[vertex].color = color
 
+            //fmt.Println("trying", vertex, color)
+
             // propagate color. this will change current domains state
             c.forwardCheckVertexColor(int32(vertex), color)
+            //c.arcConsistency3(int32(vertex))
 
             //fmt.Println(c.g)
             //c.g.printSolution()
@@ -416,17 +476,6 @@ func (c *CSPContext) solve(indent int) bool {
         }
     }
 
-    /*
-    for color := 0; color < int(c.numColors); color++ {
-        c.g.V[vertex].color = c.domain[vertex][int32(color)]
-        //fmt.Println(c.g)
-        //c.g.printSolution()
-        if c.solve() {
-            return true
-        }
-    }
-    */
-
     // unselect var
     c.currentUnassignedVertex -= 1
     c.g.V[vertex].color = 0
@@ -438,7 +487,8 @@ func (c *CSPContext) solve(indent int) bool {
 func (g *Graph) solveCSP(nColors int32) int {
     //fmt.Println("Solving for", nColors, "colors")
 
-    csp := CSPContext{g, nil, nColors, 0, VAR_BRUTE, VAL_BRUTE}
+    //csp := CSPContext{g, nil, nColors, 0, VAR_BRUTE, VAL_BRUTE}
+    csp := CSPContext{g, nil, nColors, 0, VAR_BRUTE, VAL_LCV}
     csp.init(int(nColors))
     if csp.solve(0) {
         g.printSolution()
