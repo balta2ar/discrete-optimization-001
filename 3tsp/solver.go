@@ -1,5 +1,6 @@
 package main
 
+import "math"
 import "fmt"
 import "os"
 
@@ -19,7 +20,9 @@ func max(a int32, b int32) (r int32) {
 //
 
 type Point struct {
+    index int32
     x, y float64
+    active bool
 }
 
 type Points []Point
@@ -29,9 +32,54 @@ type Points []Point
 // func (self ByInt32) Less(i, j int) bool { return self[i] < self[j] }
 // func (self ByInt32) Swap(i, j int) { self[i], self[j] = self[j], self[i] }
 
-func solveGreedy(ps Points) int {
+func (ps Points) dist(i, j int) float64 {
+    return math.Sqrt(math.Pow(ps[i].x - ps[j].x, 2) +
+                     math.Pow(ps[i].y - ps[j].y, 2))
+}
+
+func (ps Points) nearestTo(j int) int {
+    var nearest int = -1
+    var minDist float64 = math.MaxFloat64
+    for i := 0; i < len(ps); i++ {
+        switch {
+        case i == j || !ps[i].active:
+            continue
+        case nearest == -1:
+            nearest = j
+        default:
+            d := ps.dist(i, j)
+            if d < minDist {
+                minDist = d
+                nearest = i
+            }
+        }
+    }
+    return nearest
+}
+
+func (ps Points) solveGreedy() int {
     N := len(ps)
-    fmt.Println(N)
+    currentPoint := 0
+    nextPoint := 0
+    var pathLen float64 = 0
+    var pointOrder = make([]int, N)
+
+    pointOrder[0] = currentPoint
+
+    for i := 1; i < N; i++ {
+        nextPoint = ps.nearestTo(currentPoint)
+        pointOrder[i] = nextPoint
+        pathLen += ps.dist(currentPoint, nextPoint)
+        ps[currentPoint].active = false
+        currentPoint = nextPoint
+    }
+
+    fmt.Println(pathLen, 0)
+    for i := 0; i < N; i++ {
+        fmt.Printf("%d ", pointOrder[i])
+    }
+    fmt.Printf("\n")
+    //fmt.Println(ps)
     return 0
 }
 
@@ -44,21 +92,23 @@ func solveFile(filename string, alg string) int {
     defer file.Close()
 
     var N int
+    var x, y float64
     fmt.Fscanf(file, "%d", &N)
 
-    ps := make([]Point, N)
+    ps := Points(make([]Point, N))
 
     for i := 0; i < N; i++ {
-        fmt.Fscanf(file, "%f %f", &ps[i].x, &ps[i].y)
+        fmt.Fscanf(file, "%f %f", &x, &y)
+        ps[i] = Point{int32(i), x, y, true}
     }
 
     switch {
     case alg == "greedy":
-        return solveGreedy(ps)
+        return ps.solveGreedy()
     case alg == "csp":
         return 1
     default:
-        return solveGreedy(ps)
+        return ps.solveGreedy()
     }
 
     return 0
