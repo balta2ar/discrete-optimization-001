@@ -13,6 +13,27 @@
 # 3 args == calc solution with specified ncolors, cache solution
 #
 
+
+
+
+time go run solver.go $1 > sol
+cat sol
+python2 ./plot.py $1 < sol
+
+
+
+
+
+exit 0
+
+
+
+
+
+
+
+
+
 SOLUTIONDIR="solution"
 INPUT=$(basename $1)
 

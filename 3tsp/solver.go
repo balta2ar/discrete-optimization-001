@@ -41,12 +41,11 @@ func (ps Points) nearestTo(j int) int {
     var nearest int = -1
     var minDist float64 = math.MaxFloat64
     for i := 0; i < len(ps); i++ {
-        switch {
-        case i == j || !ps[i].active:
+        if (i == j) || (!ps[i].active) {
             continue
-        case nearest == -1:
-            nearest = j
-        default:
+        } else if nearest == -1 {
+            nearest = i
+        } else {
             d := ps.dist(i, j)
             if d < minDist {
                 minDist = d
@@ -54,6 +53,7 @@ func (ps Points) nearestTo(j int) int {
             }
         }
     }
+    //fmt.Println("nearest to", j, "is", nearest, "-", minDist)
     return nearest
 }
 
@@ -66,12 +66,19 @@ func (ps Points) solveGreedy() int {
 
     pointOrder[0] = currentPoint
 
+    //fmt.Println(pointOrder)
     for i := 1; i < N; i++ {
         nextPoint = ps.nearestTo(currentPoint)
+        //fmt.Println(nextPoint)
         pointOrder[i] = nextPoint
         pathLen += ps.dist(currentPoint, nextPoint)
         ps[currentPoint].active = false
+
+        //fmt.Println("turn off", currentPoint)
+        //fmt.Println(ps)
+
         currentPoint = nextPoint
+        //fmt.Println(pointOrder)
     }
 
     fmt.Println(pathLen, 0)
@@ -82,6 +89,13 @@ func (ps Points) solveGreedy() int {
     //fmt.Println(ps)
     return 0
 }
+
+// TODO:
+// 1. select best of greedy solutions (try all points as a starting point)
+// 2. build distMatrix
+// 3. build nearestMatrix
+// 4. implement 2-opt, k-opt
+//
 
 func solveFile(filename string, alg string) int {
     file, err := os.Open(filename)
