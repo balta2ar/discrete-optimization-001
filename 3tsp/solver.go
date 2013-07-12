@@ -7,6 +7,10 @@ import "fmt"
 import "log"
 import "os"
 
+const (
+    MAX_SECONDS_BETWEEN_CHANGES = 120
+)
+
 // functions which Go developers should have implemented but happened
 // to be too lazy and religious to do so
 
@@ -315,18 +319,38 @@ func (ps Points) kOpt(solution Solution) Solution {
     //log.Println("selected", selected, "t1", t1, "t2", t2)
     //log.Println("x1", x1, "t2Next", t2Next, "t3", t3)
 
-    for i := 0; i < N; i++ {
-        for j := i+2; j < N; j++ {
-            newSolution := reconnectPoints(i, j, solution)
-            newSolution.cost = ps.calcCost(newSolution, false)
+    timestamp := time.Now().Unix()
 
-            //log.Println(newSolution)
+    changed := true
+    for changed {
+        changed = false
 
-            if newSolution.cost < solution.cost {
-                solution = newSolution
-                solution.cost = newSolution.cost
-                log.Println("BETTER SOLUTION FOUND", solution.cost)
-                //return newSolution
+        for i := 0; i < N; i++ {
+            for j := i+2; j < N; j++ {
+                newSolution := reconnectPoints(i, j, solution)
+                newSolution.cost = ps.calcCost(newSolution, false)
+
+                //log.Println(newSolution)
+
+                if newSolution.cost < solution.cost {
+                    solution = newSolution
+                    solution.cost = newSolution.cost
+                    diff := time.Now().Unix() - timestamp
+                    log.Println("BETTER SOLUTION FOUND", diff, solution.cost)
+                    //return newSolution
+
+                    changed = true
+                    timestamp = time.Now().Unix()
+                    break
+                }
+            }
+
+            if changed {
+                break
+            }
+
+            if time.Now().Unix() - timestamp > MAX_SECONDS_BETWEEN_CHANGES {
+                return solution
             }
         }
     }
