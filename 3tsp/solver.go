@@ -144,7 +144,6 @@ func (ctx Context) setActive(val bool) {
 // solves the problem from the specified point
 // enumerate all the points to get the best greedy solution
 func (ctx Context) solveGreedyFrom(currentPoint int) Solution {
-    //currentPoint := 0
     nextPoint := 0
     var pathLen float64 = 0
     var pointOrder = make([]int, ctx.N)
@@ -152,16 +151,12 @@ func (ctx Context) solveGreedyFrom(currentPoint int) Solution {
     pointOrder[0] = currentPoint
     ctx.setActive(true)
 
-    //fmt.Println(pointOrder)
     for i := 1; i < ctx.N; i++ {
         nextPoint = ctx.nearestTo(currentPoint)
-        //fmt.Println(nextPoint)
         pointOrder[i] = nextPoint
         pathLen += ctx.dist(currentPoint, nextPoint)
         ctx.ps[currentPoint].active = false
-
         currentPoint = nextPoint
-        //fmt.Println(pointOrder)
     }
 
     pathLen += ctx.dist(pointOrder[ctx.N-1], pointOrder[0])
@@ -170,112 +165,19 @@ func (ctx Context) solveGreedyFrom(currentPoint int) Solution {
 
 // tries greedy alg for all the points in the graph and selects the best
 func (ctx Context) solveGreedy() Solution {
-    //log.Println("solving for 0")
     bestSolution := ctx.solveGreedyFrom(0)
-    //log.Println(0, bestSolution.cost)
-    //bestSolutionIndex := 0
-    //return bestSolution
 
     for i := 1; i < ctx.N; i++ {
         solution := ctx.solveGreedyFrom(i)
-        //log.Println(i, solution.cost)
         if solution.cost < bestSolution.cost {
             bestSolution = solution
-            //bestSolutionIndex = i
         }
     }
 
-    //log.Println("best solution index", bestSolutionIndex)
     return bestSolution
 }
 
-// func findInSlice(what int, where []int) int {
-//     pos := -1
-//     for i := 0; i < len(where); i++ {
-//         if where[i] == what {
-//             return i
-//         }
-//     }
-//     return pos
-// }
-
-// func (ps Points) calcCost(solution Solution, pr bool) float64 {
-//     cost := 0.0
-//     N := len(solution.order)
-//     for i := 0; i < N; i++ {
-//         d := ps.dist(solution.order[i], solution.order[(i+1) % N])
-//         if pr {
-//            log.Println(d)
-//         }
-//         cost += d
-//     }
-//     //cost += ps.dist(solution.order[N-1], solution.order[0])
-//     return cost
-// }
-
-// connect t1->t4, t2-t3, and reverse path between t2 and t4
-// func reconnectPoints(selected, t1, t2, t3 int, origSolution Solution) Solution {
-//     N := len(origSolution.order)
-// 
-//     solution := origSolution
-//     solution.order = make([]int, N)
-//     copy(solution.order, origSolution.order)
-// 
-//     t3InOrder := findInSlice(t3, solution.order)
-//     t3InOrderPrev := (t3InOrder-1) % N
-//     if t3InOrderPrev < 0 {
-//         // stupid Go
-//         t3InOrderPrev = N + t3InOrderPrev
-//     }
-//     //log.Println("t3InOrderPrev", t3InOrderPrev)
-//     t4 := solution.order[t3InOrderPrev]
-//     //log.Println("t3InOrder", t3InOrder, "t4", t4)
-// 
-//     // there is a part of graph order which needs to be reversed
-//     // from next(t2) == selected+2 (inclusive)
-//     // to t4 == t3InOrder-1 (not inclusive)
-//     from := selected+2 // inclusive
-//     to := t3InOrder-1 // not inclusive
-//     var length int
-//     if from <= to {
-//         length = to-from
-//     } else {
-//         length = (N-from) + to
-//     }
-//     orderPart := make([]int, length)
-//     for i := 0; i < length; i++ {
-//         orderPart[i] = solution.order[(from+i) % N]
-//     }
-//     //log.Println("order part", orderPart)
-// 
-//     // reverse
-//     for i, j := 0, length-1; i < j; i, j = i+1, j-1 {
-//         orderPart[i], orderPart[j] = orderPart[j], orderPart[i]
-//     }
-// 
-//     // now fix solution order
-//     ptr := selected+1
-// 
-//     // t1 - - -> t4
-//     solution.order[ptr % N] = t4
-//     ptr++
-// 
-//     // insert reversed part order
-//     for i := 0; i < len(orderPart); i++ {
-//         solution.order[ptr % N] = orderPart[i]
-//         ptr++
-//     }
-// 
-//     // insert t2 => t3 connection
-//     solution.order[ptr % N] = t2
-//     ptr++
-//     solution.order[ptr % N] = t3
-// 
-//     return solution
-// }
-
 func (ctx Context) predictCost(p1, p3 int, solution Solution) float64 {
-    //N := len(solution.order)
     cost := solution.cost
     t1 := solution.order[p1 % ctx.N]
     t2 := solution.order[(p1+1) % ctx.N]
@@ -332,7 +234,6 @@ func reconnectPoints(p1, p3 int, origSolution Solution) Solution {
     for i := 0; i < length; i++ {
         orderPart[i] = solution.order[(from+i) % N]
     }
-    //log.Println("order part", orderPart)
 
     // reverse
     for i, j := 0, length-1; i < j; i, j = i+1, j-1 {
