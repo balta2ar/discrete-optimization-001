@@ -28,22 +28,16 @@ func max(a int32, b int32) (r int32) {
 //
 
 type Point struct {
-    index int32
     x, y float32
     active bool
 }
 
 type Points []Point
 
-type DistTo struct {
-    index int32     // point index in the Points
-    distTo float32  // distance to that particular point
-}
-
 type Context struct {
     ps Points
     distMatrix [][]float32
-    nearestToMatrix [][]DistTo
+    nearestToMatrix [][]int32
     N int
 }
 
@@ -57,16 +51,6 @@ type Solution struct {
     order []int
     cost float32
 }
-
-type ByDistTo []DistTo
-func (self ByDistTo) Len() int { return len(self) }
-func (self ByDistTo) Less(i, j int) bool { return self[i].distTo < self[j].distTo }
-func (self ByDistTo) Swap(i, j int) { self[i], self[j] = self[j], self[i] }
-
-// type ByInt32 []int32
-// func (self ByInt32) Len() int { return len(self) }
-// func (self ByInt32) Less(i, j int) bool { return self[i] < self[j] }
-// func (self ByInt32) Swap(i, j int) { self[i], self[j] = self[j], self[i] }
 
 // calc and cache distances from each to each point
 // create triangle matrix to save space
@@ -86,20 +70,33 @@ func (ctx Context) calcDistMatrix() Context {
     return ctx
 }
 
+// used to sort indexs by distance to some point
+type IndexSorter struct {
+    idx []int32
+    from int32
+    ctx Context
+}
+
+func (s *IndexSorter) Len() int { return s.ctx.N }
+func (s *IndexSorter) Swap(i, j int) { s.idx[i], s.idx[j] = s.idx[j], s.idx[i] }
+func (s *IndexSorter) Less(i, j int) bool {
+    a := s.ctx.dist(int(s.from), int(s.idx[i]))
+    b := s.ctx.dist(int(s.from), int(s.idx[j]))
+    return a < b
+}
+
 // calc and cache sorted list of distances from each to each point
 // (to be used in greedy alg)
 // WARNING: depends on calcDistMatrix
 // ctx.distMatrix MUST be calculated before calling this function
 func (ctx Context) calcNearestToMatrix() Context {
-    ctx.nearestToMatrix = make([][]DistTo, ctx.N)
+    ctx.nearestToMatrix = make([][]int32, ctx.N)
     for i := 0; i < ctx.N; i++ {
-        distTo := make([]DistTo, ctx.N)
+        ctx.nearestToMatrix[i] = make([]int32, ctx.N)
         for j := 0; j < ctx.N; j++ {
-            distTo[j] = DistTo{int32(j), ctx.dist(i, j)}
+            ctx.nearestToMatrix[i][j] = int32(j)
         }
-        sort.Sort(ByDistTo(distTo))
-        //log.Println(distTo)
-        ctx.nearestToMatrix[i] = distTo
+        sort.Sort(&IndexSorter{ctx.nearestToMatrix[i], int32(i), ctx})
     }
     return ctx
 }
@@ -134,7 +131,7 @@ func (ctx Context) nearestTo(j int) int {
     for i := 0; i < ctx.N; i++ {
         // k is what i used to be before the optimization
         // k -- point index in the Points slice
-        k := int(ctx.nearestToMatrix[j][i].index)
+        k := int(ctx.nearestToMatrix[j][i])
         if (k != j) && ctx.ps[k].active {
             return k
         }
@@ -187,7 +184,7 @@ func (ctx Context) nearestToExceptSmallerThan(j, a, b int, maxDist float32) int 
 }
 
 func printSolution(solution Solution) {
-    fmt.Println(solution.cost, 0)
+    fmt.Printf("%f %d\n", solution.cost, 0)
     for i := 0; i < len(solution.order); i++ {
         fmt.Printf("%d ", solution.order[i])
     }
@@ -428,7 +425,7 @@ func solveFile(filename string, alg string) int {
 
     for i := 0; i < N; i++ {
         fmt.Fscanf(file, "%f %f", &x, &y)
-        ps[i] = Point{int32(i), x, y, true}
+        ps[i] = Point{x, y, true}
     }
 
     ctx := Context{ps, nil, nil, len(ps)}
@@ -452,8 +449,8 @@ func solveFile(filename string, alg string) int {
         printSolution(solution)
 
     default:
-        //solution := ctx.solveGreedy()
-        solution := ctx.solveGreedyFrom(0)
+        solution := ctx.solveGreedy()
+        //solution := ctx.solveGreedyFrom(0)
         printSolution(solution)
 
         //solution = ctx.exhaustive2Opt(solution)
