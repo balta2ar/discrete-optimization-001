@@ -170,7 +170,7 @@ func (ctx Context) solveGreedyFrom(currentPoint int) Solution {
 
 // tries greedy alg for all the points in the graph and selects the best
 func (ctx Context) solveGreedy() Solution {
-    log.Println("solving for 0")
+    //log.Println("solving for 0")
     bestSolution := ctx.solveGreedyFrom(0)
     //log.Println(0, bestSolution.cost)
     //bestSolutionIndex := 0
@@ -360,72 +360,28 @@ func reconnectPoints(p1, p3 int, origSolution Solution) Solution {
     return solution
 }
 
-func (ctx Context) kOpt(solution Solution) Solution {
+func (ctx Context) greedy2Opt(solution Solution) Solution {
     log.Println("N", ctx.N)
-
-    //ns := solution
-
-
-    //solution
-    //return solution
-
-    // selected := 0 //rand.Int() % N // 3
-    // t1 := solution.order[selected]
-    // t2 := solution.order[(selected+1) % N]
-
-    // x1 := ps.dist(t1, t2)
-    // t2Next := solution.order[(selected+2) % N]
-    // t3 := ps.nearestToExceptSmallerThan(t2, t1, t2Next, x1)
-
-    //log.Println("current cost", solution.cost, "N", N)
-    //log.Println("selected", selected, "t1", t1, "t2", t2)
-    //log.Println("x1", x1, "t2Next", t2Next, "t3", t3)
-
     timestamp := time.Now().Unix()
-
     changed := true
+
     for changed {
         changed = false
 
         for i := 0; i < ctx.N; i++ {
             for j := i+2; j < ctx.N; j++ {
                 predictedCost := ctx.predictCost(i, j, solution)
-                // return solution
                 if predictedCost < solution.cost {
                     solution = reconnectPoints(i, j, solution)
 
                     diff := time.Now().Unix() - timestamp
                     log.Println("swap", diff, "|", i, j, "|", solution.cost, "=>", predictedCost)
-
                     solution.cost = predictedCost
-                    //newCost := ps.calcCost(solution, false)
-                    // if solution.cost != newCost {
-                    //     log.Println("new cost != predictedCost", predictedCost, newCost)
-                    // }
-
-                    // log.Println("BETTER SOLUTION FOUND", diff, solution.cost)
 
                     changed = true
                     timestamp = time.Now().Unix()
                     break
                 }
-
-                //newSolution := reconnectPoints(i, j, solution)
-                //newSolution.cost = ps.calcCost(newSolution, false)
-
-                //log.Println(newSolution)
-
-                // if newSolution.cost < solution.cost {
-                //     solution = newSolution
-                //     solution.cost = newSolution.cost
-                //     diff := time.Now().Unix() - timestamp
-                //     log.Println("BETTER SOLUTION FOUND", diff, solution.cost)
-                //     //return newSolution
-
-                //     changed = true
-                //     timestamp = time.Now().Unix()
-                //     break
-                // }
             }
 
             if changed {
@@ -438,17 +394,47 @@ func (ctx Context) kOpt(solution Solution) Solution {
         }
     }
 
-    // if t3 != -1 {
-    //     //newSolution := reconnectPoints(selected, t1, t2, t3, solution)
-    //     newSolution := reconnectPoints(i, j, solution)
-    //     newSolution.cost = ps.calcCost(solution)
+    return solution
+}
 
-    //     if newSolution.cost < solution.cost {
-    //         log.Println("BETTER SOLUTION FOUND")
-    //         //return newSolution
-    //         solution = newSolution
-    //     }
-    // }
+func (ctx Context) exhaustive2Opt(solution Solution) Solution {
+    log.Println("N", ctx.N)
+    timestamp := time.Now().Unix()
+    changed := true
+
+    for changed {
+        changed = false
+
+        bestI, bestJ := -1, -1
+        bestSwapCost := -1.0
+
+        for i := 0; i < ctx.N; i++ {
+            for j := i+2; j < ctx.N; j++ {
+                predictedCost := ctx.predictCost(i, j, solution)
+                if predictedCost < solution.cost {
+                    if bestSwapCost == -1 || predictedCost < bestSwapCost {
+                        bestSwapCost = predictedCost
+                        bestI, bestJ = i, j
+                    }
+
+                    changed = true
+                    timestamp = time.Now().Unix()
+                }
+
+            }
+
+            if time.Now().Unix() - timestamp > MAX_SECONDS_BETWEEN_CHANGES {
+                return solution
+            }
+        }
+
+        if changed {
+            solution = reconnectPoints(bestI, bestJ, solution)
+            diff := time.Now().Unix() - timestamp
+            log.Println("swap", diff, "|", bestI, bestJ, "|", solution.cost, "=>", bestSwapCost)
+            solution.cost = bestSwapCost
+        }
+    }
 
     return solution
 }
@@ -493,19 +479,26 @@ func solveFile(filename string, alg string) int {
     case alg == "greedy":
         solution := ctx.solveGreedy()
         printSolution(solution)
-    case alg == "csp":
-        return 1
-    default:
-        //solution := ps.solveGreedy()
+
+    case alg == "g2o":
         solution := ctx.solveGreedyFrom(0)
-        //c := ps.calcCost(solution, false)
-        //fmt.Println(c)
+        printSolution(solution)
+        solution = ctx.greedy2Opt(solution)
         printSolution(solution)
 
-        solution = ctx.kOpt(solution)
+    case alg == "e2o":
+        solution := ctx.solveGreedy()
         printSolution(solution)
-        //c := ps.calcCost(solution, false)
-        //log.Println(c)
+        solution = ctx.exhaustive2Opt(solution)
+        printSolution(solution)
+
+    default:
+        solution := ctx.solveGreedy()
+        //solution := ctx.solveGreedyFrom(0)
+        printSolution(solution)
+
+        //solution = ctx.exhaustive2Opt(solution)
+        //printSolution(solution)
     }
 
     return 0
