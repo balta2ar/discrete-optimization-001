@@ -2,6 +2,7 @@ package main
 
 import "time"
 import "math"
+import "sort"
 import "math/rand"
 import "fmt"
 import "log"
@@ -34,9 +35,15 @@ type Point struct {
 
 type Points []Point
 
+type DistTo struct {
+    index int32     // point index in the Points
+    distTo float64  // distance to that particular point
+}
+
 type Context struct {
     ps Points
     distMatrix [][]float64
+    nearestToMatrix [][]DistTo
     N int
 }
 
@@ -51,11 +58,17 @@ type Solution struct {
     cost float64
 }
 
+type ByDistTo []DistTo
+func (self ByDistTo) Len() int { return len(self) }
+func (self ByDistTo) Less(i, j int) bool { return self[i].distTo < self[j].distTo }
+func (self ByDistTo) Swap(i, j int) { self[i], self[j] = self[j], self[i] }
+
 // type ByInt32 []int32
 // func (self ByInt32) Len() int { return len(self) }
 // func (self ByInt32) Less(i, j int) bool { return self[i] < self[j] }
 // func (self ByInt32) Swap(i, j int) { self[i], self[j] = self[j], self[i] }
 
+// calc and cache distances from each to each point
 func (ctx Context) calcDistMatrix() Context {
     ctx.distMatrix = make([][]float64, ctx.N)
     for i := 0; i < ctx.N; i++ {
@@ -64,12 +77,30 @@ func (ctx Context) calcDistMatrix() Context {
             ctx.distMatrix[i][j] = ctx.calcDist(i, j)
         }
     }
+    return ctx
+}
 
+// calc and cache sorted list of distances from each to each point
+// (to be used in greedy alg)
+// WARNING: depends on calcDistMatrix
+// ctx.distMatrix MUST be calculated before calling this function
+func (ctx Context) calcNearestToMatrix() Context {
+    ctx.nearestToMatrix = make([][]DistTo, ctx.N)
+    for i := 0; i < ctx.N; i++ {
+        distTo := make([]DistTo, ctx.N)
+        for j := 0; j < ctx.N; j++ {
+            distTo[j] = DistTo{int32(j), ctx.dist(i, j)}
+        }
+        sort.Sort(ByDistTo(distTo))
+        //log.Println(distTo)
+        ctx.nearestToMatrix[i] = distTo
+    }
     return ctx
 }
 
 func (ctx Context) init() Context {
     ctx = ctx.calcDistMatrix()
+    ctx = ctx.calcNearestToMatrix()
     return ctx
 }
 
@@ -79,30 +110,41 @@ func (ctx Context) calcDist(i, j int) float64 {
 }
 
 func (ctx Context) dist(i, j int) float64 {
-    //log.Println(ctx.distMatrix)
-    //log.Println(i, j)
     return ctx.distMatrix[i][j]
 }
 
 func (ctx Context) nearestTo(j int) int {
-    var nearest int = -1
-    var minDist float64 = math.MaxFloat64
     for i := 0; i < ctx.N; i++ {
-        if (i == j) || (!ctx.ps[i].active) {
-            continue
-        } else if nearest == -1 {
-            nearest = i
-        } else {
-            d := ctx.dist(i, j)
-            if d < minDist {
-                minDist = d
-                nearest = i
-            }
+        // k is what i used to be before the optimization
+        // k -- point index in the Points slice
+        k := int(ctx.nearestToMatrix[j][i].index)
+        if (k != j) && ctx.ps[k].active {
+            return k
         }
     }
-    //fmt.Println("nearest to", j, "is", nearest, "-", minDist)
-    return nearest
+
+    return -1
 }
+
+// func (ctx Context) oldNearestTo(j int) int {
+//     var nearest int = -1
+//     var minDist float64 = math.MaxFloat64
+//     for i := 0; i < ctx.N; i++ {
+//         if (i == j) || (!ctx.ps[i].active) {
+//             continue
+//         } else if nearest == -1 {
+//             nearest = i
+//         } else {
+//             d := ctx.dist(i, j)
+//             if d < minDist {
+//                 minDist = d
+//                 nearest = i
+//             }
+//         }
+//     }
+//     //fmt.Println("nearest to", j, "is", nearest, "-", minDist)
+//     return nearest
+// }
 
 func (ctx Context) nearestToExceptSmallerThan(j, a, b int, maxDist float64) int {
     var nearest int = -1
@@ -321,7 +363,6 @@ func (ctx Context) exhaustive2Opt(solution Solution) Solution {
                     changed = true
                     timestamp = time.Now().Unix()
                 }
-
             }
 
             if time.Now().Unix() - timestamp > MAX_SECONDS_BETWEEN_CHANGES {
@@ -342,7 +383,7 @@ func (ctx Context) exhaustive2Opt(solution Solution) Solution {
 
 // TODO:
 // 1.~select best of greedy solutions (try all points as a starting point)
-// 2. pre-compute distMatrix
+// 2.+pre-compute distMatrix
 // 3. pre-compute nearestMatrix
 // 4. implement
 //    + 2-opt
@@ -373,7 +414,7 @@ func solveFile(filename string, alg string) int {
         ps[i] = Point{int32(i), x, y, true}
     }
 
-    ctx := Context{ps, nil, len(ps)}
+    ctx := Context{ps, nil, nil, len(ps)}
     ctx = ctx.init()
 
     switch {
@@ -398,8 +439,8 @@ func solveFile(filename string, alg string) int {
         //solution := ctx.solveGreedyFrom(0)
         printSolution(solution)
 
-        //solution = ctx.exhaustive2Opt(solution)
-        //printSolution(solution)
+        solution = ctx.exhaustive2Opt(solution)
+        printSolution(solution)
     }
 
     return 0
