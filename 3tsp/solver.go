@@ -106,14 +106,23 @@ func printSolution(solution Solution) {
     fmt.Printf("\n")
 }
 
-func (ps Points) solveGreedy() Solution {
+func (ps Points) setActive(val bool) {
+    for i := 0; i < len(ps); i++ {
+        ps[i].active = val
+    }
+}
+
+// solves the problem from the specified point
+// enumerate all the points to get the best greedy solution
+func (ps Points) solveGreedyFrom(currentPoint int) Solution {
     N := len(ps)
-    currentPoint := 0
+    //currentPoint := 0
     nextPoint := 0
     var pathLen float64 = 0
     var pointOrder = make([]int, N)
 
     pointOrder[0] = currentPoint
+    ps.setActive(true)
 
     //fmt.Println(pointOrder)
     for i := 1; i < N; i++ {
@@ -123,21 +132,34 @@ func (ps Points) solveGreedy() Solution {
         pathLen += ps.dist(currentPoint, nextPoint)
         ps[currentPoint].active = false
 
-        //fmt.Println("turn off", currentPoint)
-        //fmt.Println(ps)
-
         currentPoint = nextPoint
         //fmt.Println(pointOrder)
     }
 
     pathLen += ps.dist(pointOrder[N-1], pointOrder[0])
-
-    //follow := make(FollowList, N)
-    //log.Println(follow)
-
-    //fmt.Println(ps)
-    //return pointOrder
     return Solution{pointOrder, pathLen}
+}
+
+// tries greedy alg for all the points in the graph and selects the best
+func (ps Points) solveGreedy() Solution {
+    N := len(ps)
+    log.Println("solving for 0")
+    bestSolution := ps.solveGreedyFrom(0)
+    //log.Println(0, bestSolution.cost)
+    //bestSolutionIndex := 0
+    //return bestSolution
+
+    for i := 1; i < N; i++ {
+        solution := ps.solveGreedyFrom(i)
+        //log.Println(i, solution.cost)
+        if solution.cost < bestSolution.cost {
+            bestSolution = solution
+            //bestSolutionIndex = i
+        }
+    }
+
+    //log.Println("best solution index", bestSolutionIndex)
+    return bestSolution
 }
 
 func findInSlice(what int, where []int) int {
@@ -374,8 +396,14 @@ func (ps Points) kOpt(solution Solution) Solution {
 // 1. select best of greedy solutions (try all points as a starting point)
 // 2. pre-compute distMatrix
 // 3. pre-compute nearestMatrix
-// 4. implement 2-opt, k-opt
+// 4. implement
+//    + 2-opt
+//    _ k-opt
 // 5. use double-linked slice instead of order list
+// 6. use SA (Simulated Annealing)
+// 7. use Metropolis meta-heuristics (to get out of local minima)
+// 8. use tabu search
+// 9. implement cheaper way to predict cost after change
 //
 
 func solveFile(filename string, alg string) int {
@@ -404,27 +432,20 @@ func solveFile(filename string, alg string) int {
     case alg == "csp":
         return 1
     default:
-        solution := ps.solveGreedy()
+        //solution := ps.solveGreedy()
+        solution := ps.solveGreedyFrom(0)
         //c := ps.calcCost(solution, false)
         //fmt.Println(c)
-        //printSolution(solution)
-
-        solution = ps.kOpt(solution)
-        // log.Println(solution.cost)
         printSolution(solution)
 
-        // c = ps.calcCost(solution, false)
-        // fmt.Println(c)
+        solution = ps.kOpt(solution)
+        printSolution(solution)
     }
 
     return 0
 }
 
 func main() {
-    //log.Println((3+3) % 5)
-    //log.Println((1-3) % 5)
-    //return
-
     rand.Seed(time.Now().UTC().UnixNano())
     alg := "auto"
     if len(os.Args) > 2 {
