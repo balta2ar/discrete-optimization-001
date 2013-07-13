@@ -247,6 +247,20 @@ func (ps Points) calcCost(solution Solution, pr bool) float64 {
 //     return solution
 // }
 
+func (ps Points) predictCost(p1, p3 int, solution Solution) float64 {
+    N := len(solution.order)
+    cost := solution.cost
+    t1 := solution.order[p1 % N]
+    t2 := solution.order[(p1+1) % N]
+    t4 := solution.order[p3 % N]
+    t3 := solution.order[(p3+1) % N]
+    cost -= ps.dist(t1, t2)
+    cost -= ps.dist(t4, t3)
+    cost += ps.dist(t1, t4)
+    cost += ps.dist(t2, t3)
+    return cost
+}
+
 func reconnectPoints(p1, p3 int, origSolution Solution) Solution {
     N := len(origSolution.order)
 
@@ -349,22 +363,43 @@ func (ps Points) kOpt(solution Solution) Solution {
 
         for i := 0; i < N; i++ {
             for j := i+2; j < N; j++ {
-                newSolution := reconnectPoints(i, j, solution)
-                newSolution.cost = ps.calcCost(newSolution, false)
+                predictedCost := ps.predictCost(i, j, solution)
+                // return solution
+                if predictedCost < solution.cost {
+                    solution = reconnectPoints(i, j, solution)
 
-                //log.Println(newSolution)
-
-                if newSolution.cost < solution.cost {
-                    solution = newSolution
-                    solution.cost = newSolution.cost
                     diff := time.Now().Unix() - timestamp
-                    log.Println("BETTER SOLUTION FOUND", diff, solution.cost)
-                    //return newSolution
+                    log.Println("swap", diff, "|", i, j, "|", solution.cost, "=>", predictedCost)
+
+                    solution.cost = predictedCost
+                    //newCost := ps.calcCost(solution, false)
+                    // if solution.cost != newCost {
+                    //     log.Println("new cost != predictedCost", predictedCost, newCost)
+                    // }
+
+                    // log.Println("BETTER SOLUTION FOUND", diff, solution.cost)
 
                     changed = true
                     timestamp = time.Now().Unix()
                     break
                 }
+
+                //newSolution := reconnectPoints(i, j, solution)
+                //newSolution.cost = ps.calcCost(newSolution, false)
+
+                //log.Println(newSolution)
+
+                // if newSolution.cost < solution.cost {
+                //     solution = newSolution
+                //     solution.cost = newSolution.cost
+                //     diff := time.Now().Unix() - timestamp
+                //     log.Println("BETTER SOLUTION FOUND", diff, solution.cost)
+                //     //return newSolution
+
+                //     changed = true
+                //     timestamp = time.Now().Unix()
+                //     break
+                // }
             }
 
             if changed {
@@ -440,6 +475,8 @@ func solveFile(filename string, alg string) int {
 
         solution = ps.kOpt(solution)
         printSolution(solution)
+        //c := ps.calcCost(solution, false)
+        //log.Println(c)
     }
 
     return 0
