@@ -69,11 +69,17 @@ func (self ByDistTo) Swap(i, j int) { self[i], self[j] = self[j], self[i] }
 // func (self ByInt32) Swap(i, j int) { self[i], self[j] = self[j], self[i] }
 
 // calc and cache distances from each to each point
+// create triangle matrix to save space
 func (ctx Context) calcDistMatrix() Context {
     ctx.distMatrix = make([][]float64, ctx.N)
-    for i := 0; i < ctx.N; i++ {
-        ctx.distMatrix[i] = make([]float64, ctx.N)
-        for j := 0; j < ctx.N; j++ {
+    for i := 1; i < ctx.N; i++ {
+        // ctx.distMatrix[i] = make([]float64, ctx.N)
+        // for j := 0; j < ctx.N; j++ {
+        //     ctx.distMatrix[i][j] = ctx.calcDist(i, j)
+        // }
+
+        ctx.distMatrix[i] = make([]float64, i)
+        for j := 0; j < i; j++ {
             ctx.distMatrix[i][j] = ctx.calcDist(i, j)
         }
     }
@@ -100,6 +106,7 @@ func (ctx Context) calcNearestToMatrix() Context {
 
 func (ctx Context) init() Context {
     ctx = ctx.calcDistMatrix()
+    //log.Println(ctx.distMatrix)
     ctx = ctx.calcNearestToMatrix()
     return ctx
 }
@@ -110,6 +117,16 @@ func (ctx Context) calcDist(i, j int) float64 {
 }
 
 func (ctx Context) dist(i, j int) float64 {
+    // return ctx.distMatrix[i][j]
+
+    if i == j {
+        return 0.0
+    }
+    if j > i {
+        i, j = j, i
+    }
+    //log.Println(i, j, "=>", i, j-i-1)
+    //return ctx.distMatrix[i][j-i-1]
     return ctx.distMatrix[i][j]
 }
 
@@ -128,7 +145,7 @@ func (ctx Context) nearestTo(j int) int {
 
 // func (ctx Context) oldNearestTo(j int) int {
 //     var nearest int = -1
-//     var minDist float64 = math.MaxFloat64
+//     var minDist float64 = math.Maxfloat64
 //     for i := 0; i < ctx.N; i++ {
 //         if (i == j) || (!ctx.ps[i].active) {
 //             continue
@@ -349,7 +366,7 @@ func (ctx Context) exhaustive2Opt(solution Solution) Solution {
         changed = false
 
         bestI, bestJ := -1, -1
-        bestSwapCost := -1.0
+        var bestSwapCost float64 = -1.0
 
         for i := 0; i < ctx.N; i++ {
             for j := i+2; j < ctx.N; j++ {
@@ -384,7 +401,7 @@ func (ctx Context) exhaustive2Opt(solution Solution) Solution {
 // TODO:
 // 1.~select best of greedy solutions (try all points as a starting point)
 // 2.+pre-compute distMatrix
-// 3. pre-compute nearestMatrix
+// 3.+pre-compute nearestMatrix
 // 4. implement
 //    + 2-opt
 //    _ k-opt
@@ -435,12 +452,12 @@ func solveFile(filename string, alg string) int {
         printSolution(solution)
 
     default:
-        solution := ctx.solveGreedy()
-        //solution := ctx.solveGreedyFrom(0)
+        //solution := ctx.solveGreedy()
+        solution := ctx.solveGreedyFrom(0)
         printSolution(solution)
 
-        solution = ctx.exhaustive2Opt(solution)
-        printSolution(solution)
+        //solution = ctx.exhaustive2Opt(solution)
+        //printSolution(solution)
     }
 
     return 0

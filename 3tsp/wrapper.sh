@@ -16,7 +16,7 @@
 
 
 
-time go run solver.go $1 $2 > sol
+/usr/bin/time -v go run solver.go $1 $2 > sol
 cat sol
 python2 ./plot.py $1 < sol
 
