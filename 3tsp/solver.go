@@ -29,7 +29,7 @@ func max(a int32, b int32) (r int32) {
 
 type Point struct {
     index int32
-    x, y float64
+    x, y float32
     active bool
 }
 
@@ -37,12 +37,12 @@ type Points []Point
 
 type DistTo struct {
     index int32     // point index in the Points
-    distTo float64  // distance to that particular point
+    distTo float32  // distance to that particular point
 }
 
 type Context struct {
     ps Points
-    distMatrix [][]float64
+    distMatrix [][]float32
     nearestToMatrix [][]DistTo
     N int
 }
@@ -55,7 +55,7 @@ type FollowList []FollowPoint
 
 type Solution struct {
     order []int
-    cost float64
+    cost float32
 }
 
 type ByDistTo []DistTo
@@ -71,14 +71,14 @@ func (self ByDistTo) Swap(i, j int) { self[i], self[j] = self[j], self[i] }
 // calc and cache distances from each to each point
 // create triangle matrix to save space
 func (ctx Context) calcDistMatrix() Context {
-    ctx.distMatrix = make([][]float64, ctx.N)
+    ctx.distMatrix = make([][]float32, ctx.N)
     for i := 1; i < ctx.N; i++ {
-        // ctx.distMatrix[i] = make([]float64, ctx.N)
+        // ctx.distMatrix[i] = make([]float32, ctx.N)
         // for j := 0; j < ctx.N; j++ {
         //     ctx.distMatrix[i][j] = ctx.calcDist(i, j)
         // }
 
-        ctx.distMatrix[i] = make([]float64, i)
+        ctx.distMatrix[i] = make([]float32, i)
         for j := 0; j < i; j++ {
             ctx.distMatrix[i][j] = ctx.calcDist(i, j)
         }
@@ -111,12 +111,12 @@ func (ctx Context) init() Context {
     return ctx
 }
 
-func (ctx Context) calcDist(i, j int) float64 {
-    return math.Sqrt(math.Pow(ctx.ps[i].x - ctx.ps[j].x, 2) +
-                     math.Pow(ctx.ps[i].y - ctx.ps[j].y, 2))
+func (ctx Context) calcDist(i, j int) float32 {
+    return float32(math.Sqrt(math.Pow(float64(ctx.ps[i].x - ctx.ps[j].x), 2) +
+                             math.Pow(float64(ctx.ps[i].y - ctx.ps[j].y), 2)))
 }
 
-func (ctx Context) dist(i, j int) float64 {
+func (ctx Context) dist(i, j int) float32 {
     // return ctx.distMatrix[i][j]
 
     if i == j {
@@ -145,7 +145,7 @@ func (ctx Context) nearestTo(j int) int {
 
 // func (ctx Context) oldNearestTo(j int) int {
 //     var nearest int = -1
-//     var minDist float64 = math.Maxfloat64
+//     var minDist float32 = math.Maxfloat32
 //     for i := 0; i < ctx.N; i++ {
 //         if (i == j) || (!ctx.ps[i].active) {
 //             continue
@@ -163,9 +163,9 @@ func (ctx Context) nearestTo(j int) int {
 //     return nearest
 // }
 
-func (ctx Context) nearestToExceptSmallerThan(j, a, b int, maxDist float64) int {
+func (ctx Context) nearestToExceptSmallerThan(j, a, b int, maxDist float32) int {
     var nearest int = -1
-    var minDist float64 = math.MaxFloat64
+    var minDist float32 = math.MaxFloat32
     for i := 0; i < ctx.N; i++ {
         if (i == j) || (i == a) || (i == b) { //|| (!ps[i].active) {
             continue
@@ -204,7 +204,7 @@ func (ctx Context) setActive(val bool) {
 // enumerate all the points to get the best greedy solution
 func (ctx Context) solveGreedyFrom(currentPoint int) Solution {
     nextPoint := 0
-    var pathLen float64 = 0
+    var pathLen float32 = 0
     var pointOrder = make([]int, ctx.N)
 
     pointOrder[0] = currentPoint
@@ -236,7 +236,7 @@ func (ctx Context) solveGreedy() Solution {
     return bestSolution
 }
 
-func (ctx Context) predictCost(p1, p3 int, solution Solution) float64 {
+func (ctx Context) predictCost(p1, p3 int, solution Solution) float32 {
     cost := solution.cost
     t1 := solution.order[p1 % ctx.N]
     t2 := solution.order[(p1+1) % ctx.N]
@@ -366,7 +366,7 @@ func (ctx Context) exhaustive2Opt(solution Solution) Solution {
         changed = false
 
         bestI, bestJ := -1, -1
-        var bestSwapCost float64 = -1.0
+        var bestSwapCost float32 = -1.0
 
         for i := 0; i < ctx.N; i++ {
             for j := i+2; j < ctx.N; j++ {
@@ -421,7 +421,7 @@ func solveFile(filename string, alg string) int {
     defer file.Close()
 
     var N int
-    var x, y float64
+    var x, y float32
     fmt.Fscanf(file, "%d", &N)
 
     ps := Points(make([]Point, N))
