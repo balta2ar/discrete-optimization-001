@@ -34,6 +34,12 @@ type Point struct {
 
 type Points []Point
 
+type Context struct {
+    ps Points
+    distMatrix [][]float64
+    N int
+}
+
 type FollowPoint struct {
     next, prev int
 }
@@ -50,21 +56,44 @@ type Solution struct {
 // func (self ByInt32) Less(i, j int) bool { return self[i] < self[j] }
 // func (self ByInt32) Swap(i, j int) { self[i], self[j] = self[j], self[i] }
 
-func (ps Points) dist(i, j int) float64 {
-    return math.Sqrt(math.Pow(ps[i].x - ps[j].x, 2) +
-                     math.Pow(ps[i].y - ps[j].y, 2))
+func (ctx Context) calcDistMatrix() Context {
+    ctx.distMatrix = make([][]float64, ctx.N)
+    for i := 0; i < ctx.N; i++ {
+        ctx.distMatrix[i] = make([]float64, ctx.N)
+        for j := 0; j < ctx.N; j++ {
+            ctx.distMatrix[i][j] = ctx.calcDist(i, j)
+        }
+    }
+
+    return ctx
 }
 
-func (ps Points) nearestTo(j int) int {
+func (ctx Context) init() Context {
+    ctx = ctx.calcDistMatrix()
+    return ctx
+}
+
+func (ctx Context) calcDist(i, j int) float64 {
+    return math.Sqrt(math.Pow(ctx.ps[i].x - ctx.ps[j].x, 2) +
+                     math.Pow(ctx.ps[i].y - ctx.ps[j].y, 2))
+}
+
+func (ctx Context) dist(i, j int) float64 {
+    //log.Println(ctx.distMatrix)
+    //log.Println(i, j)
+    return ctx.distMatrix[i][j]
+}
+
+func (ctx Context) nearestTo(j int) int {
     var nearest int = -1
     var minDist float64 = math.MaxFloat64
-    for i := 0; i < len(ps); i++ {
-        if (i == j) || (!ps[i].active) {
+    for i := 0; i < ctx.N; i++ {
+        if (i == j) || (!ctx.ps[i].active) {
             continue
         } else if nearest == -1 {
             nearest = i
         } else {
-            d := ps.dist(i, j)
+            d := ctx.dist(i, j)
             if d < minDist {
                 minDist = d
                 nearest = i
@@ -75,16 +104,16 @@ func (ps Points) nearestTo(j int) int {
     return nearest
 }
 
-func (ps Points) nearestToExceptSmallerThan(j, a, b int, maxDist float64) int {
+func (ctx Context) nearestToExceptSmallerThan(j, a, b int, maxDist float64) int {
     var nearest int = -1
     var minDist float64 = math.MaxFloat64
-    for i := 0; i < len(ps); i++ {
+    for i := 0; i < ctx.N; i++ {
         if (i == j) || (i == a) || (i == b) { //|| (!ps[i].active) {
             continue
         } else if nearest == -1 {
             nearest = i
         } else {
-            d := ps.dist(i, j)
+            d := ctx.dist(i, j)
             if d >= maxDist {
                 continue
             }
@@ -106,51 +135,49 @@ func printSolution(solution Solution) {
     fmt.Printf("\n")
 }
 
-func (ps Points) setActive(val bool) {
-    for i := 0; i < len(ps); i++ {
-        ps[i].active = val
+func (ctx Context) setActive(val bool) {
+    for i := 0; i < ctx.N; i++ {
+        ctx.ps[i].active = val
     }
 }
 
 // solves the problem from the specified point
 // enumerate all the points to get the best greedy solution
-func (ps Points) solveGreedyFrom(currentPoint int) Solution {
-    N := len(ps)
+func (ctx Context) solveGreedyFrom(currentPoint int) Solution {
     //currentPoint := 0
     nextPoint := 0
     var pathLen float64 = 0
-    var pointOrder = make([]int, N)
+    var pointOrder = make([]int, ctx.N)
 
     pointOrder[0] = currentPoint
-    ps.setActive(true)
+    ctx.setActive(true)
 
     //fmt.Println(pointOrder)
-    for i := 1; i < N; i++ {
-        nextPoint = ps.nearestTo(currentPoint)
+    for i := 1; i < ctx.N; i++ {
+        nextPoint = ctx.nearestTo(currentPoint)
         //fmt.Println(nextPoint)
         pointOrder[i] = nextPoint
-        pathLen += ps.dist(currentPoint, nextPoint)
-        ps[currentPoint].active = false
+        pathLen += ctx.dist(currentPoint, nextPoint)
+        ctx.ps[currentPoint].active = false
 
         currentPoint = nextPoint
         //fmt.Println(pointOrder)
     }
 
-    pathLen += ps.dist(pointOrder[N-1], pointOrder[0])
+    pathLen += ctx.dist(pointOrder[ctx.N-1], pointOrder[0])
     return Solution{pointOrder, pathLen}
 }
 
 // tries greedy alg for all the points in the graph and selects the best
-func (ps Points) solveGreedy() Solution {
-    N := len(ps)
+func (ctx Context) solveGreedy() Solution {
     log.Println("solving for 0")
-    bestSolution := ps.solveGreedyFrom(0)
+    bestSolution := ctx.solveGreedyFrom(0)
     //log.Println(0, bestSolution.cost)
     //bestSolutionIndex := 0
     //return bestSolution
 
-    for i := 1; i < N; i++ {
-        solution := ps.solveGreedyFrom(i)
+    for i := 1; i < ctx.N; i++ {
+        solution := ctx.solveGreedyFrom(i)
         //log.Println(i, solution.cost)
         if solution.cost < bestSolution.cost {
             bestSolution = solution
@@ -162,29 +189,29 @@ func (ps Points) solveGreedy() Solution {
     return bestSolution
 }
 
-func findInSlice(what int, where []int) int {
-    pos := -1
-    for i := 0; i < len(where); i++ {
-        if where[i] == what {
-            return i
-        }
-    }
-    return pos
-}
+// func findInSlice(what int, where []int) int {
+//     pos := -1
+//     for i := 0; i < len(where); i++ {
+//         if where[i] == what {
+//             return i
+//         }
+//     }
+//     return pos
+// }
 
-func (ps Points) calcCost(solution Solution, pr bool) float64 {
-    cost := 0.0
-    N := len(solution.order)
-    for i := 0; i < N; i++ {
-        d := ps.dist(solution.order[i], solution.order[(i+1) % N])
-        if pr {
-           log.Println(d)
-        }
-        cost += d
-    }
-    //cost += ps.dist(solution.order[N-1], solution.order[0])
-    return cost
-}
+// func (ps Points) calcCost(solution Solution, pr bool) float64 {
+//     cost := 0.0
+//     N := len(solution.order)
+//     for i := 0; i < N; i++ {
+//         d := ps.dist(solution.order[i], solution.order[(i+1) % N])
+//         if pr {
+//            log.Println(d)
+//         }
+//         cost += d
+//     }
+//     //cost += ps.dist(solution.order[N-1], solution.order[0])
+//     return cost
+// }
 
 // connect t1->t4, t2-t3, and reverse path between t2 and t4
 // func reconnectPoints(selected, t1, t2, t3 int, origSolution Solution) Solution {
@@ -247,17 +274,17 @@ func (ps Points) calcCost(solution Solution, pr bool) float64 {
 //     return solution
 // }
 
-func (ps Points) predictCost(p1, p3 int, solution Solution) float64 {
-    N := len(solution.order)
+func (ctx Context) predictCost(p1, p3 int, solution Solution) float64 {
+    //N := len(solution.order)
     cost := solution.cost
-    t1 := solution.order[p1 % N]
-    t2 := solution.order[(p1+1) % N]
-    t4 := solution.order[p3 % N]
-    t3 := solution.order[(p3+1) % N]
-    cost -= ps.dist(t1, t2)
-    cost -= ps.dist(t4, t3)
-    cost += ps.dist(t1, t4)
-    cost += ps.dist(t2, t3)
+    t1 := solution.order[p1 % ctx.N]
+    t2 := solution.order[(p1+1) % ctx.N]
+    t4 := solution.order[p3 % ctx.N]
+    t3 := solution.order[(p3+1) % ctx.N]
+    cost -= ctx.dist(t1, t2)
+    cost -= ctx.dist(t4, t3)
+    cost += ctx.dist(t1, t4)
+    cost += ctx.dist(t2, t3)
     return cost
 }
 
@@ -333,9 +360,8 @@ func reconnectPoints(p1, p3 int, origSolution Solution) Solution {
     return solution
 }
 
-func (ps Points) kOpt(solution Solution) Solution {
-    N := len(solution.order)
-    log.Println("N", N)
+func (ctx Context) kOpt(solution Solution) Solution {
+    log.Println("N", ctx.N)
 
     //ns := solution
 
@@ -361,9 +387,9 @@ func (ps Points) kOpt(solution Solution) Solution {
     for changed {
         changed = false
 
-        for i := 0; i < N; i++ {
-            for j := i+2; j < N; j++ {
-                predictedCost := ps.predictCost(i, j, solution)
+        for i := 0; i < ctx.N; i++ {
+            for j := i+2; j < ctx.N; j++ {
+                predictedCost := ctx.predictCost(i, j, solution)
                 // return solution
                 if predictedCost < solution.cost {
                     solution = reconnectPoints(i, j, solution)
@@ -428,7 +454,7 @@ func (ps Points) kOpt(solution Solution) Solution {
 }
 
 // TODO:
-// 1. select best of greedy solutions (try all points as a starting point)
+// 1.~select best of greedy solutions (try all points as a starting point)
 // 2. pre-compute distMatrix
 // 3. pre-compute nearestMatrix
 // 4. implement
@@ -438,7 +464,7 @@ func (ps Points) kOpt(solution Solution) Solution {
 // 6. use SA (Simulated Annealing)
 // 7. use Metropolis meta-heuristics (to get out of local minima)
 // 8. use tabu search
-// 9. implement cheaper way to predict cost after change
+// 9.+implement cheaper way to predict cost after change
 //
 
 func solveFile(filename string, alg string) int {
@@ -460,20 +486,23 @@ func solveFile(filename string, alg string) int {
         ps[i] = Point{int32(i), x, y, true}
     }
 
+    ctx := Context{ps, nil, len(ps)}
+    ctx = ctx.init()
+
     switch {
     case alg == "greedy":
-        solution := ps.solveGreedy()
+        solution := ctx.solveGreedy()
         printSolution(solution)
     case alg == "csp":
         return 1
     default:
         //solution := ps.solveGreedy()
-        solution := ps.solveGreedyFrom(0)
+        solution := ctx.solveGreedyFrom(0)
         //c := ps.calcCost(solution, false)
         //fmt.Println(c)
         printSolution(solution)
 
-        solution = ps.kOpt(solution)
+        solution = ctx.kOpt(solution)
         printSolution(solution)
         //c := ps.calcCost(solution, false)
         //log.Println(c)
