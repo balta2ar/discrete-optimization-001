@@ -6,6 +6,8 @@ import "sort"
 import "math/rand"
 import "fmt"
 import "log"
+import "encoding/gob"
+import "compress/gzip"
 import "os"
 
 const (
@@ -30,16 +32,16 @@ func max(a int32, b int32) (r int32) {
 //
 
 type Point struct {
-    x, y float64
-    active bool
+    X, Y float64
+    Active bool
 }
 
 type Points []Point
 
 type Context struct {
-    ps Points
-    distMatrix [][]float64
-    nearestToMatrix [][]int32
+    Ps Points
+    DistMatrix [][]float64
+    NearestToMatrix [][]int32
     N int
 }
 
@@ -50,23 +52,23 @@ type FollowPoint struct {
 type FollowList []FollowPoint
 
 type Solution struct {
-    order []int
-    cost float64
+    Order []int
+    Cost float64
 }
 
 // calc and cache distances from each to each point
 // create triangle matrix to save space
 func (ctx Context) calcDistMatrix() Context {
-    ctx.distMatrix = make([][]float64, ctx.N)
+    ctx.DistMatrix = make([][]float64, ctx.N)
     for i := 1; i < ctx.N; i++ {
-        // ctx.distMatrix[i] = make([]float64, ctx.N)
+        // ctx.DistMatrix[i] = make([]float64, ctx.N)
         // for j := 0; j < ctx.N; j++ {
-        //     ctx.distMatrix[i][j] = ctx.calcDist(i, j)
+        //     ctx.DistMatrix[i][j] = ctx.calcDist(i, j)
         // }
 
-        ctx.distMatrix[i] = make([]float64, i)
+        ctx.DistMatrix[i] = make([]float64, i)
         for j := 0; j < i; j++ {
-            ctx.distMatrix[i][j] = ctx.calcDist(i, j)
+            ctx.DistMatrix[i][j] = ctx.calcDist(i, j)
         }
     }
     return ctx
@@ -90,33 +92,33 @@ func (s *IndexSorter) Less(i, j int) bool {
 // calc and cache sorted list of distances from each to each point
 // (to be used in greedy alg)
 // WARNING: depends on calcDistMatrix
-// ctx.distMatrix MUST be calculated before calling this function
+// ctx.DistMatrix MUST be calculated before calling this function
 func (ctx Context) calcNearestToMatrix() Context {
-    ctx.nearestToMatrix = make([][]int32, ctx.N)
+    ctx.NearestToMatrix = make([][]int32, ctx.N)
     for i := 0; i < ctx.N; i++ {
-        ctx.nearestToMatrix[i] = make([]int32, ctx.N)
+        ctx.NearestToMatrix[i] = make([]int32, ctx.N)
         for j := 0; j < ctx.N; j++ {
-            ctx.nearestToMatrix[i][j] = int32(j)
+            ctx.NearestToMatrix[i][j] = int32(j)
         }
-        sort.Sort(&IndexSorter{ctx.nearestToMatrix[i], int32(i), ctx})
+        sort.Sort(&IndexSorter{ctx.NearestToMatrix[i], int32(i), ctx})
     }
     return ctx
 }
 
 func (ctx Context) init() Context {
     ctx = ctx.calcDistMatrix()
-    //log.Println(ctx.distMatrix)
+    //log.Println(ctx.DistMatrix)
     ctx = ctx.calcNearestToMatrix()
     return ctx
 }
 
 func (ctx Context) calcDist(i, j int) float64 {
-    return float64(math.Sqrt(math.Pow(float64(ctx.ps[i].x - ctx.ps[j].x), 2) +
-                             math.Pow(float64(ctx.ps[i].y - ctx.ps[j].y), 2)))
+    return float64(math.Sqrt(math.Pow(float64(ctx.Ps[i].X - ctx.Ps[j].X), 2) +
+                             math.Pow(float64(ctx.Ps[i].Y - ctx.Ps[j].Y), 2)))
 }
 
 func (ctx Context) dist(i, j int) float64 {
-    // return ctx.distMatrix[i][j]
+    // return ctx.DistMatrix[i][j]
 
     if i == j {
         return 0.0
@@ -125,16 +127,16 @@ func (ctx Context) dist(i, j int) float64 {
         i, j = j, i
     }
     //log.Println(i, j, "=>", i, j-i-1)
-    //return ctx.distMatrix[i][j-i-1]
-    return ctx.distMatrix[i][j]
+    //return ctx.DistMatrix[i][j-i-1]
+    return ctx.DistMatrix[i][j]
 }
 
 func (ctx Context) nearestTo(j int) int {
     for i := 0; i < ctx.N; i++ {
         // k is what i used to be before the optimization
         // k -- point index in the Points slice
-        k := int(ctx.nearestToMatrix[j][i])
-        if (k != j) && ctx.ps[k].active {
+        k := int(ctx.NearestToMatrix[j][i])
+        if (k != j) && ctx.Ps[k].Active {
             return k
         }
     }
@@ -146,7 +148,7 @@ func (ctx Context) nearestTo(j int) int {
 //     var nearest int = -1
 //     var minDist float64 = math.Maxfloat64
 //     for i := 0; i < ctx.N; i++ {
-//         if (i == j) || (!ctx.ps[i].active) {
+//         if (i == j) || (!ctx.Ps[i].Active) {
 //             continue
 //         } else if nearest == -1 {
 //             nearest = i
@@ -166,7 +168,7 @@ func (ctx Context) nearestToExceptSmallerThan(j, a, b int, maxDist float64) int 
     var nearest int = -1
     var minDist float64 = math.MaxFloat64
     for i := 0; i < ctx.N; i++ {
-        if (i == j) || (i == a) || (i == b) { //|| (!ps[i].active) {
+        if (i == j) || (i == a) || (i == b) { //|| (!Ps[i].Active) {
             continue
         } else if nearest == -1 {
             nearest = i
@@ -186,16 +188,16 @@ func (ctx Context) nearestToExceptSmallerThan(j, a, b int, maxDist float64) int 
 }
 
 func printSolution(solution Solution) {
-    fmt.Printf("%f %d\n", solution.cost, 0)
-    for i := 0; i < len(solution.order); i++ {
-        fmt.Printf("%d ", solution.order[i])
+    fmt.Printf("%f %d\n", solution.Cost, 0)
+    for i := 0; i < len(solution.Order); i++ {
+        fmt.Printf("%d ", solution.Order[i])
     }
     fmt.Printf("\n")
 }
 
 func (ctx Context) setActive(val bool) {
     for i := 0; i < ctx.N; i++ {
-        ctx.ps[i].active = val
+        ctx.Ps[i].Active = val
     }
 }
 
@@ -213,7 +215,7 @@ func (ctx Context) solveGreedyFrom(currentPoint int) Solution {
         nextPoint = ctx.nearestTo(currentPoint)
         pointOrder[i] = nextPoint
         pathLen += ctx.dist(currentPoint, nextPoint)
-        ctx.ps[currentPoint].active = false
+        ctx.Ps[currentPoint].Active = false
         currentPoint = nextPoint
     }
 
@@ -227,7 +229,7 @@ func (ctx Context) solveGreedyBest() Solution {
 
     for i := 1; i < ctx.N; i++ {
         solution := ctx.solveGreedyFrom(i)
-        if solution.cost < bestSolution.cost {
+        if solution.Cost < bestSolution.Cost {
             bestSolution = solution
         }
     }
@@ -253,7 +255,7 @@ func (ctx Context) selectPoints(solution Solution) (int, int) {
 // have huge cumulative errors going from predictCost)
 func (ctx Context) acceptSolution(p1, p3 int, solution Solution) Solution {
     acceptedSolution := reconnectPoints(p1, p3, solution)
-    acceptedSolution.cost = ctx.calcCost(acceptedSolution, false)
+    acceptedSolution.Cost = ctx.calcCost(acceptedSolution, false)
     return acceptedSolution
 }
 
@@ -264,7 +266,7 @@ func (ctx Context) acceptSolution(p1, p3 int, solution Solution) Solution {
 func (ctx Context) acceptPredictedSolution(p1, p3 int, solution Solution) Solution {
     predictedCost := ctx.predictCost(p1, p3, solution)
     acceptedSolution := reconnectPoints(p1, p3, solution)
-    acceptedSolution.cost = predictedCost
+    acceptedSolution.Cost = predictedCost
     return acceptedSolution
 }
 
@@ -274,13 +276,13 @@ func (ctx Context) localSearch(currentSolution Solution, temperature float64) So
     for k := 0; k < 5000; k++ {
         p1, p3 := ctx.selectPoints(solution)
         predictedCost := ctx.predictCost(p1, p3, solution)
-        costDiff := predictedCost - solution.cost
+        costDiff := predictedCost - solution.Cost
         //log.Println(p1, p3, costDiff)
 
-        if predictedCost <= solution.cost {
+        if predictedCost <= solution.Cost {
             //log.Println("taking predicted solution, costDiff", costDiff)
             //solution = reconnectPoints(p1, p3, solution)
-            //solution.cost = predictedCost
+            //solution.Cost = predictedCost
             solution = ctx.acceptPredictedSolution(p1, p3, solution)
         } else {
             probability := math.Exp(- costDiff / temperature)
@@ -289,7 +291,7 @@ func (ctx Context) localSearch(currentSolution Solution, temperature float64) So
             if rand.Float64() < probability {
                 //log.Println("taking bad solution", costDiff)
                 //solution = reconnectPoints(p1, p3, solution)
-                //solution.cost = predictedCost
+                //solution.Cost = predictedCost
                 solution = ctx.acceptPredictedSolution(p1, p3, solution)
             }
         }
@@ -299,46 +301,54 @@ func (ctx Context) localSearch(currentSolution Solution, temperature float64) So
 
 func (ctx Context) simulatedAnnealing() Solution {
     //solution := ctx.solveGreedyFrom(0)
-    solution := ctx.solveGreedyBest()
+    var solution Solution
+    ptr := loadSolution("solution.greedy.best.bin")
+    if ptr == nil {
+        solution = ctx.solveGreedyBest()
+        saveSolution(&solution, "solution.greedy.best.bin")
+    } else {
+        solution = *ptr
+    }
+
     bestSolution := solution
-    t := 50.0
+    t := 200.0
     alpha := 0.9999
 
-    log.Println("start solution, t", t, "cost", solution.cost)
+    log.Println("start solution, t", t, "cost", solution.Cost)
     for k := 0; k < 30000; k++ {
         solution = ctx.localSearch(solution, t)
-        if solution.cost < bestSolution.cost {
-            diff := bestSolution.cost - solution.cost
-            log.Println("new solution, t", t, "cost", solution.cost, "diff", diff)
+        if solution.Cost < bestSolution.Cost {
+            diff := bestSolution.Cost - solution.Cost
+            log.Println("new solution, t", t, "cost", solution.Cost, "diff", diff)
             bestSolution = solution
         }
         t *= alpha
-        //log.Printf("t %f best cost %f\n", t, bestSolution.cost)
+        //log.Printf("t %f best cost %f\n", t, bestSolution.Cost)
     }
-    log.Println("last solution, t", t, "cost", bestSolution.cost)
+    log.Println("last solution, t", t, "cost", bestSolution.Cost)
     return bestSolution
 }
 
 func (ctx Context) calcCost(solution Solution, pr bool) float64 {
     cost := float64(0.0)
-    N := len(solution.order)
+    N := len(solution.Order)
     for i := 0; i < N; i++ {
-        d := ctx.dist(solution.order[i], solution.order[(i+1) % N])
+        d := ctx.dist(solution.Order[i], solution.Order[(i+1) % N])
         if pr {
            log.Println(d)
         }
         cost += d
     }
-    //cost += ctx.dist(solution.order[N-1], solution.order[0])
+    //cost += ctx.dist(solution.Order[N-1], solution.Order[0])
     return cost
 }
 
 func (ctx Context) predictCost(p1, p3 int, solution Solution) float64 {
-    cost := solution.cost
-    t1 := solution.order[p1 % ctx.N]
-    t2 := solution.order[(p1+1) % ctx.N]
-    t4 := solution.order[p3 % ctx.N]
-    t3 := solution.order[(p3+1) % ctx.N]
+    cost := solution.Cost
+    t1 := solution.Order[p1 % ctx.N]
+    t2 := solution.Order[(p1+1) % ctx.N]
+    t4 := solution.Order[p3 % ctx.N]
+    t3 := solution.Order[(p3+1) % ctx.N]
     cost -= ctx.dist(t1, t2)
     cost -= ctx.dist(t4, t3)
     cost += ctx.dist(t1, t4)
@@ -348,26 +358,26 @@ func (ctx Context) predictCost(p1, p3 int, solution Solution) float64 {
 
 func cloneSolution(solution Solution) Solution {
     newSolution := solution
-    newSolution.order = make([]int, len(solution.order))
-    copy(newSolution.order, solution.order)
+    newSolution.Order = make([]int, len(solution.Order))
+    copy(newSolution.Order, solution.Order)
     return newSolution
 }
 
 func reconnectPoints(p1, p3 int, origSolution Solution) Solution {
-    N := len(origSolution.order)
+    N := len(origSolution.Order)
 
     solution := cloneSolution(origSolution)
     // solution := origSolution
-    // solution.order = make([]int, N)
-    // copy(solution.order, origSolution.order)
+    // solution.Order = make([]int, N)
+    // copy(solution.Order, origSolution.Order)
 
-    //t1 := solution.order[p1]
-    t2 := solution.order[(p1+1) % N]
+    //t1 := solution.Order[p1]
+    t2 := solution.Order[(p1+1) % N]
 
-    t3 := solution.order[(p3+1) % N]
-    t4 := solution.order[p3]
+    t3 := solution.Order[(p3+1) % N]
+    t4 := solution.Order[p3]
 
-    // t3InOrder := findInSlice(t3, solution.order)
+    // t3InOrder := findInSlice(t3, solution.Order)
     // t3InOrderPrev := (t3InOrder-1) % N
     // if t3InOrderPrev < 0 {
     //     // stupid Go
@@ -375,7 +385,7 @@ func reconnectPoints(p1, p3 int, origSolution Solution) Solution {
     // }
 
     //log.Println("t3InOrderPrev", t3InOrderPrev)
-    //t4 := solution.order[t3InOrderPrev]
+    //t4 := solution.Order[t3InOrderPrev]
     //log.Println("t3InOrder", t3InOrder, "t4", t4)
 
     t3InOrder := (p3+1) % N
@@ -396,7 +406,7 @@ func reconnectPoints(p1, p3 int, origSolution Solution) Solution {
     }
     orderPart := make([]int, length)
     for i := 0; i < length; i++ {
-        orderPart[i] = solution.order[(from+i) % N]
+        orderPart[i] = solution.Order[(from+i) % N]
     }
 
     // reverse
@@ -408,19 +418,19 @@ func reconnectPoints(p1, p3 int, origSolution Solution) Solution {
     ptr := selected+1
 
     // t1 - - -> t4
-    solution.order[ptr % N] = t4
+    solution.Order[ptr % N] = t4
     ptr++
 
     // insert reversed part order
     for i := 0; i < len(orderPart); i++ {
-        solution.order[ptr % N] = orderPart[i]
+        solution.Order[ptr % N] = orderPart[i]
         ptr++
     }
 
     // insert t2 => t3 connection
-    solution.order[ptr % N] = t2
+    solution.Order[ptr % N] = t2
     ptr++
-    solution.order[ptr % N] = t3
+    solution.Order[ptr % N] = t3
 
     return solution
 }
@@ -436,12 +446,12 @@ func (ctx Context) greedy2Opt(solution Solution) Solution {
         for i := 0; i < ctx.N; i++ {
             for j := i+2; j < ctx.N; j++ {
                 predictedCost := ctx.predictCost(i, j, solution)
-                if predictedCost < solution.cost {
+                if predictedCost < solution.Cost {
                     solution = reconnectPoints(i, j, solution)
 
                     //diff := time.Now().Unix() - timestamp
-                    //log.Println("swap", diff, "|", i, j, "|", solution.cost, "=>", predictedCost)
-                    solution.cost = predictedCost
+                    //log.Println("swap", diff, "|", i, j, "|", solution.Cost, "=>", predictedCost)
+                    solution.Cost = predictedCost
 
                     changed = true
                     timestamp = time.Now().Unix()
@@ -478,7 +488,7 @@ func (ctx Context) exhaustive2Opt(solution Solution) Solution {
         for i := 0; i < ctx.N; i++ {
             for j := i+2; j < ctx.N; j++ {
                 predictedCost := ctx.predictCost(i, j, solution)
-                if predictedCost < solution.cost {
+                if predictedCost < solution.Cost {
                     if bestSwapCost == -1 || predictedCost < bestSwapCost {
                         bestSwapCost = predictedCost
                         bestI, bestJ = i, j
@@ -497,16 +507,16 @@ func (ctx Context) exhaustive2Opt(solution Solution) Solution {
         if changed {
             solution = reconnectPoints(bestI, bestJ, solution)
             //diff := time.Now().Unix() - timestamp
-            //log.Println("swap", diff, "|", bestI, bestJ, "|", solution.cost, "=>", bestSwapCost)
-            solution.cost = bestSwapCost
+            //log.Println("swap", diff, "|", bestI, bestJ, "|", solution.Cost, "=>", bestSwapCost)
+            solution.Cost = bestSwapCost
 
-            if solution.cost < 20750.0 {
+            if solution.Cost < 20750.0 {
                 return solution
             }
 
-            if lastCost < 0 || (lastCost - solution.cost > 50.0) {
-                //log.Println("current cost", solution.cost)
-                lastCost = solution.cost
+            if lastCost < 0 || (lastCost - solution.Cost > 50.0) {
+                //log.Println("current cost", solution.Cost)
+                lastCost = solution.Cost
             }
         }
     }
@@ -514,9 +524,89 @@ func (ctx Context) exhaustive2Opt(solution Solution) Solution {
     return solution
 }
 
+// - load / save ---------------------------------------------------------------
+
+//
+// Solution
+//
+func saveSolution(solution *Solution, name string) {
+    file, err := os.Create(name)
+    if err != nil {
+        log.Println("Cannot save to file", name, err)
+        return
+    }
+    defer file.Close()
+
+    zip := gzip.NewWriter(file)
+    defer zip.Close()
+
+    encoder := gob.NewEncoder(zip)
+    encoder.Encode(solution)
+    log.Println("Saved to file", name)
+}
+
+func loadSolution(name string) *Solution {
+    file, err := os.Open(name)
+    if err != nil {
+        log.Println("Cannot open file", name, err)
+        return nil
+    }
+    defer file.Close()
+
+    unzip, _ := gzip.NewReader(file)
+    defer unzip.Close()
+
+    var solution Solution
+    decoder := gob.NewDecoder(unzip)
+    decoder.Decode(&solution)
+    log.Println("Loaded from file", name)
+    return &solution
+}
+
+//
+// Context
+//
+func saveContext(ctx *Context, name string) {
+    // Ps Points
+    // DistMatrix [][]float64
+    // NearestToMatrix [][]int32
+    // N int
+    file, err := os.Create(name)
+    if err != nil {
+        log.Println("Cannot save to file", name, err)
+        return
+    }
+    defer file.Close()
+
+    zip := gzip.NewWriter(file)
+    defer zip.Close()
+
+    encoder := gob.NewEncoder(zip)
+    encoder.Encode(ctx)
+    log.Println("Saved to file", name)
+}
+
+func loadContext(name string) *Context {
+    file, err := os.Open(name)
+    if err != nil {
+        log.Println("Cannot open file", name, err)
+        return nil
+    }
+    defer file.Close()
+
+    unzip, _ := gzip.NewReader(file)
+    defer unzip.Close()
+
+    var ctx Context
+    decoder := gob.NewDecoder(unzip)
+    decoder.Decode(&ctx)
+    log.Println("Loaded from file", name)
+    return &ctx
+}
+
 // TODO:
 // 1.~select best of greedy solutions (try all points as a starting point)
-// 2.+pre-compute distMatrix
+// 2.+pre-compute DistMatrix
 // 3.+pre-compute nearestMatrix
 // 4. implement
 //    + 2-opt
@@ -528,11 +618,10 @@ func (ctx Context) exhaustive2Opt(solution Solution) Solution {
 // 9.+implement cheaper way to predict cost after change
 //
 
-func solveFile(filename string, alg string) int {
+func initContextFromFile(filename string) Context {
     file, err := os.Open(filename)
     if err != nil {
-        fmt.Println("Cannot open file:", filename, err)
-        return 2
+        panic(fmt.Sprintf("Cannot open file %s: %s", filename, err))
     }
     defer file.Close()
 
@@ -540,15 +629,32 @@ func solveFile(filename string, alg string) int {
     var x, y float64
     fmt.Fscanf(file, "%d", &N)
 
-    ps := Points(make([]Point, N))
+    Ps := Points(make([]Point, N))
 
     for i := 0; i < N; i++ {
         fmt.Fscanf(file, "%f %f", &x, &y)
-        ps[i] = Point{x, y, true}
+        Ps[i] = Point{x, y, true}
     }
 
-    ctx := Context{ps, nil, nil, len(ps)}
+    ctx := Context{Ps, nil, nil, len(Ps)}
     ctx = ctx.init()
+    return ctx
+}
+
+func createContext(filename string) Context {
+    var ctx Context
+    ptr := loadContext("context.bin")
+    if ptr == nil {
+        ctx = initContextFromFile(filename)
+        saveContext(&ctx, "context.bin")
+    } else {
+        ctx = *ptr
+    }
+    return ctx
+}
+
+func solveFile(filename string, alg string) int {
+    ctx := createContext(filename)
 
     switch {
     case alg == "greedy":
@@ -575,8 +681,8 @@ func solveFile(filename string, alg string) int {
             //printSolution(solution)
             solution := ctx.solveGreedyFrom(i)
             solution = ctx.greedy2Opt(solution)
-            if solution.cost < bestSolution.cost {
-                log.Printf("NEW BEST SOLUTION %f\n", solution.cost)
+            if solution.Cost < bestSolution.Cost {
+                log.Printf("NEW BEST SOLUTION %f\n", solution.Cost)
                 bestSolution = solution
             }
             log.Println("iteration", i, "done")
@@ -591,8 +697,8 @@ func solveFile(filename string, alg string) int {
             //printSolution(solution)
             solution := ctx.solveGreedyFrom(i)
             solution = ctx.exhaustive2Opt(solution)
-            if solution.cost < bestSolution.cost {
-                log.Printf("NEW BEST SOLUTION %f\n", solution.cost)
+            if solution.Cost < bestSolution.Cost {
+                log.Printf("NEW BEST SOLUTION %f\n", solution.Cost)
                 bestSolution = solution
             }
             log.Println("iteration", i, "done")
@@ -615,14 +721,14 @@ func solveFile(filename string, alg string) int {
 
         // solution := ctx.solveGreedyFrom(0)
         // p1, p3 := 5, 10
-        // log.Println("points", p1, p3, solution.order[p1], solution.order[p3])
+        // log.Println("points", p1, p3, solution.Order[p1], solution.Order[p3])
         // predictedCost := ctx.predictCost(p1, p3, solution)
         // newSolution := ctx.acceptSolution(p1, p3, solution)
         // printSolution(solution)
         // printSolution(newSolution)
-        // log.Println("original", solution.cost)
+        // log.Println("original", solution.Cost)
         // log.Println("predicted", predictedCost)
-        // log.Println("actual", newSolution.cost)
+        // log.Println("actual", newSolution.Cost)
     }
 
     return 0
