@@ -271,7 +271,7 @@ func (ctx Context) acceptPredictedSolution(p1, p3 int, solution Solution) Soluti
 // run local search with Metropolis meta-heuristic
 func (ctx Context) localSearch(currentSolution Solution, temperature float64) Solution {
     solution := cloneSolution(currentSolution)
-    for k := 0; k < 3000; k++ {
+    for k := 0; k < 5000; k++ {
         p1, p3 := ctx.selectPoints(solution)
         predictedCost := ctx.predictCost(p1, p3, solution)
         costDiff := predictedCost - solution.cost
@@ -298,20 +298,24 @@ func (ctx Context) localSearch(currentSolution Solution, temperature float64) So
 }
 
 func (ctx Context) simulatedAnnealing() Solution {
-    solution := ctx.solveGreedyFrom(0)
+    //solution := ctx.solveGreedyFrom(0)
+    solution := ctx.solveGreedyBest()
     bestSolution := solution
-    t := 10.0
+    t := 50.0
     alpha := 0.9999
 
+    log.Println("start solution, t", t, "cost", solution.cost)
     for k := 0; k < 30000; k++ {
         solution = ctx.localSearch(solution, t)
         if solution.cost < bestSolution.cost {
-            log.Println("new solution", solution.cost)
+            diff := bestSolution.cost - solution.cost
+            log.Println("new solution, t", t, "cost", solution.cost, "diff", diff)
             bestSolution = solution
         }
         t *= alpha
-        log.Printf("t %f best cost %f\n", t, bestSolution.cost)
+        //log.Printf("t %f best cost %f\n", t, bestSolution.cost)
     }
+    log.Println("last solution, t", t, "cost", bestSolution.cost)
     return bestSolution
 }
 
