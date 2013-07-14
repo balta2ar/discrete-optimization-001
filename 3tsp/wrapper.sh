@@ -19,6 +19,7 @@
 /usr/bin/time -v go run solver.go $1 $2 > sol
 cat sol
 python2 ./plot.py $1 < sol
+#python2 ./plot2.py $1 sol > plot.dot #| dot -Tpng > snap.png
 
 
 

@@ -237,6 +237,10 @@ func (ctx Context) solveGreedyBest() Solution {
     return bestSolution
 }
 
+func (ctx Context) solveGreedyRandom() Solution {
+    return ctx.solveGreedyFrom(rand.Int() % ctx.N)
+}
+
 // randomly select two non-adjacent points
 func (ctx Context) selectPoints(solution Solution) (int, int) {
     p1 := rand.Int() % ctx.N
@@ -273,7 +277,7 @@ func (ctx Context) acceptPredictedSolution(p1, p3 int, solution Solution) Soluti
 // run local search with Metropolis meta-heuristic
 func (ctx Context) localSearch(currentSolution Solution, temperature float64) Solution {
     solution := cloneSolution(currentSolution)
-    for k := 0; k < 5000; k++ {
+    for k := 0; k < 10000; k++ {
         p1, p3 := ctx.selectPoints(solution)
         predictedCost := ctx.predictCost(p1, p3, solution)
         costDiff := predictedCost - solution.Cost
@@ -304,28 +308,58 @@ func (ctx Context) simulatedAnnealing() Solution {
     var solution Solution
     ptr := loadSolution("solution.greedy.best.bin")
     if ptr == nil {
+        //solution = ctx.solveGreedyRandom()
         solution = ctx.solveGreedyBest()
         saveSolution(&solution, "solution.greedy.best.bin")
     } else {
         solution = *ptr
     }
 
+    solution = *loadSolution("solution.last.bin")
+
     bestSolution := solution
-    t := 200.0
-    alpha := 0.9999
+    t := 75.0
+    // 0.99991 -- 327K
+    alpha := 0.99999
 
     log.Println("start solution, t", t, "cost", solution.Cost)
-    for k := 0; k < 30000; k++ {
+    //for k := 0; k < 200000; k++ {
+    for t > 1.5 {
+        if t < 40.0 {
+            alpha = 0.999999
+        }
+
         solution = ctx.localSearch(solution, t)
         if solution.Cost < bestSolution.Cost {
             diff := bestSolution.Cost - solution.Cost
-            log.Println("new solution, t", t, "cost", solution.Cost, "diff", diff)
+            log.Printf("1 | new solution, t %f cost %f diff %f\n", t, solution.Cost, diff)
             bestSolution = solution
+
+            saveSolution(&solution, "solution.current.bin")
         }
         t *= alpha
         //log.Printf("t %f best cost %f\n", t, bestSolution.Cost)
     }
     log.Println("last solution, t", t, "cost", bestSolution.Cost)
+
+
+    // t = 50.0
+    // alpha = 0.99991
+
+    // solution = bestSolution
+    // log.Println("start solution, t", t, "cost", solution.Cost)
+    // for k := 0; k < 30000; k++ {
+    //     solution = ctx.localSearch(solution, t)
+    //     if solution.Cost < bestSolution.Cost {
+    //         diff := bestSolution.Cost - solution.Cost
+    //         log.Println("2 | new solution, t", t, "cost", solution.Cost, "diff", diff)
+    //         bestSolution = solution
+    //     }
+    //     t *= alpha
+    //     //log.Printf("t %f best cost %f\n", t, bestSolution.Cost)
+    // }
+    // log.Println("last solution, t", t, "cost", bestSolution.Cost)
+
     return bestSolution
 }
 
@@ -542,7 +576,7 @@ func saveSolution(solution *Solution, name string) {
 
     encoder := gob.NewEncoder(zip)
     encoder.Encode(solution)
-    log.Println("Saved to file", name)
+    //log.Println("Saved to file", name)
 }
 
 func loadSolution(name string) *Solution {
@@ -559,7 +593,7 @@ func loadSolution(name string) *Solution {
     var solution Solution
     decoder := gob.NewDecoder(unzip)
     decoder.Decode(&solution)
-    log.Println("Loaded from file", name)
+    //log.Println("Loaded from file", name)
     return &solution
 }
 
@@ -642,6 +676,9 @@ func initContextFromFile(filename string) Context {
 }
 
 func createContext(filename string) Context {
+    // ctx := initContextFromFile(filename)
+    // return ctx
+
     var ctx Context
     ptr := loadContext("context.bin")
     if ptr == nil {
