@@ -10,6 +10,8 @@ import "os"
 
 const (
     MAX_SECONDS_BETWEEN_CHANGES = 120
+    // SA_MAX_ITERATIONS = 100
+    // LS_MAX_TRIALS = 1000
 )
 
 // functions which Go developers should have implemented but happened
@@ -50,20 +52,6 @@ type FollowList []FollowPoint
 type Solution struct {
     order []int
     cost float64
-}
-
-func (ctx Context) calcCost(solution Solution, pr bool) float64 {
-    cost := float64(0.0)
-    N := len(solution.order)
-    for i := 0; i < N; i++ {
-        d := ctx.dist(solution.order[i], solution.order[(i+1) % N])
-        if pr {
-           log.Println(d)
-        }
-        cost += d
-    }
-    cost += ctx.dist(solution.order[N-1], solution.order[0])
-    return cost
 }
 
 // calc and cache distances from each to each point
@@ -111,25 +99,20 @@ func (ctx Context) calcNearestToMatrix() Context {
             ctx.nearestToMatrix[i][j] = int32(j)
         }
         sort.Sort(&IndexSorter{ctx.nearestToMatrix[i], int32(i), ctx})
-        log.Println(ctx.nearestToMatrix[i])
-        break
     }
     return ctx
 }
 
 func (ctx Context) init() Context {
-    //ctx = ctx.calcDistMatrix()
-    
+    ctx = ctx.calcDistMatrix()
     //log.Println(ctx.distMatrix)
     ctx = ctx.calcNearestToMatrix()
     return ctx
 }
 
 func (ctx Context) calcDist(i, j int) float64 {
-    //return float64(math.Sqrt(math.Pow(float64(ctx.ps[i].x - ctx.ps[j].x), 2) +
-    //                         math.Pow(float64(ctx.ps[i].y - ctx.ps[j].y), 2)))
-    return float64(math.Pow(float64(ctx.ps[i].x - ctx.ps[j].x), 2) +
-                   math.Pow(float64(ctx.ps[i].y - ctx.ps[j].y), 2))
+    return float64(math.Sqrt(math.Pow(float64(ctx.ps[i].x - ctx.ps[j].x), 2) +
+                             math.Pow(float64(ctx.ps[i].y - ctx.ps[j].y), 2)))
 }
 
 func (ctx Context) dist(i, j int) float64 {
@@ -239,7 +222,7 @@ func (ctx Context) solveGreedyFrom(currentPoint int) Solution {
 }
 
 // tries greedy alg for all the points in the graph and selects the best
-func (ctx Context) solveGreedy() Solution {
+func (ctx Context) solveGreedyBest() Solution {
     bestSolution := ctx.solveGreedyFrom(0)
 
     for i := 1; i < ctx.N; i++ {
@@ -250,6 +233,100 @@ func (ctx Context) solveGreedy() Solution {
     }
 
     return bestSolution
+}
+
+// randomly select two non-adjacent points
+func (ctx Context) selectPoints(solution Solution) (int, int) {
+    p1 := rand.Int() % ctx.N
+    p3 := rand.Int() % ctx.N
+
+    // p3 must not be near p1
+    for p3 == p1 || p3 == (p1+1) % ctx.N || (p3+1) % ctx.N == p1 {
+        p3 = rand.Int() % ctx.N
+    }
+
+    return p1, p3
+}
+
+// create new solution with swapped points and
+// new cost recalculated from scratch (I used to
+// have huge cumulative errors going from predictCost)
+func (ctx Context) acceptSolution(p1, p3 int, solution Solution) Solution {
+    acceptedSolution := reconnectPoints(p1, p3, solution)
+    acceptedSolution.cost = ctx.calcCost(acceptedSolution, false)
+    return acceptedSolution
+}
+
+// lightweight version of acceptSolution which
+// only swaps points and sets predicted solution
+// cost -- warning, this might contain huge cumulative
+// error
+func (ctx Context) acceptPredictedSolution(p1, p3 int, solution Solution) Solution {
+    predictedCost := ctx.predictCost(p1, p3, solution)
+    acceptedSolution := reconnectPoints(p1, p3, solution)
+    acceptedSolution.cost = predictedCost
+    return acceptedSolution
+}
+
+// run local search with Metropolis meta-heuristic
+func (ctx Context) localSearch(currentSolution Solution, temperature float64) Solution {
+    solution := cloneSolution(currentSolution)
+    for k := 0; k < 3000; k++ {
+        p1, p3 := ctx.selectPoints(solution)
+        predictedCost := ctx.predictCost(p1, p3, solution)
+        costDiff := predictedCost - solution.cost
+        //log.Println(p1, p3, costDiff)
+
+        if predictedCost <= solution.cost {
+            //log.Println("taking predicted solution, costDiff", costDiff)
+            //solution = reconnectPoints(p1, p3, solution)
+            //solution.cost = predictedCost
+            solution = ctx.acceptPredictedSolution(p1, p3, solution)
+        } else {
+            probability := math.Exp(- costDiff / temperature)
+            //log.Println("prob", probability)
+
+            if rand.Float64() < probability {
+                //log.Println("taking bad solution", costDiff)
+                //solution = reconnectPoints(p1, p3, solution)
+                //solution.cost = predictedCost
+                solution = ctx.acceptPredictedSolution(p1, p3, solution)
+            }
+        }
+    }
+    return solution
+}
+
+func (ctx Context) simulatedAnnealing() Solution {
+    solution := ctx.solveGreedyFrom(0)
+    bestSolution := solution
+    t := 10.0
+    alpha := 0.9999
+
+    for k := 0; k < 30000; k++ {
+        solution = ctx.localSearch(solution, t)
+        if solution.cost < bestSolution.cost {
+            log.Println("new solution", solution.cost)
+            bestSolution = solution
+        }
+        t *= alpha
+        log.Printf("t %f best cost %f\n", t, bestSolution.cost)
+    }
+    return bestSolution
+}
+
+func (ctx Context) calcCost(solution Solution, pr bool) float64 {
+    cost := float64(0.0)
+    N := len(solution.order)
+    for i := 0; i < N; i++ {
+        d := ctx.dist(solution.order[i], solution.order[(i+1) % N])
+        if pr {
+           log.Println(d)
+        }
+        cost += d
+    }
+    //cost += ctx.dist(solution.order[N-1], solution.order[0])
+    return cost
 }
 
 func (ctx Context) predictCost(p1, p3 int, solution Solution) float64 {
@@ -265,12 +342,20 @@ func (ctx Context) predictCost(p1, p3 int, solution Solution) float64 {
     return cost
 }
 
+func cloneSolution(solution Solution) Solution {
+    newSolution := solution
+    newSolution.order = make([]int, len(solution.order))
+    copy(newSolution.order, solution.order)
+    return newSolution
+}
+
 func reconnectPoints(p1, p3 int, origSolution Solution) Solution {
     N := len(origSolution.order)
 
-    solution := origSolution
-    solution.order = make([]int, N)
-    copy(solution.order, origSolution.order)
+    solution := cloneSolution(origSolution)
+    // solution := origSolution
+    // solution.order = make([]int, N)
+    // copy(solution.order, origSolution.order)
 
     //t1 := solution.order[p1]
     t2 := solution.order[(p1+1) % N]
@@ -463,7 +548,7 @@ func solveFile(filename string, alg string) int {
 
     switch {
     case alg == "greedy":
-        solution := ctx.solveGreedy()
+        solution := ctx.solveGreedyBest()
         printSolution(solution)
 
     case alg == "g2o":
@@ -473,7 +558,7 @@ func solveFile(filename string, alg string) int {
         printSolution(solution)
 
     case alg == "e2o":
-        solution := ctx.solveGreedy()
+        solution := ctx.solveGreedyBest()
         //printSolution(solution)
         solution = ctx.exhaustive2Opt(solution)
         printSolution(solution)
@@ -511,14 +596,29 @@ func solveFile(filename string, alg string) int {
         printSolution(bestSolution)
 
     default:
-        //solution := ctx.solveGreedy()
+        //solution := ctx.solveGreedyBest()
         //solution := ctx.solveGreedyFrom(90)
-        log.Println("greedy done")
+        //log.Println("greedy done")
         //printSolution(solution)
 
         //solution = ctx.exhaustive2Opt(solution)
         //solution = ctx.greedy2Opt(solution)
         //printSolution(solution)
+
+        solution := ctx.simulatedAnnealing()
+        printSolution(solution)
+        log.Printf("actual cost %f\n", ctx.calcCost(solution, false))
+
+        // solution := ctx.solveGreedyFrom(0)
+        // p1, p3 := 5, 10
+        // log.Println("points", p1, p3, solution.order[p1], solution.order[p3])
+        // predictedCost := ctx.predictCost(p1, p3, solution)
+        // newSolution := ctx.acceptSolution(p1, p3, solution)
+        // printSolution(solution)
+        // printSolution(newSolution)
+        // log.Println("original", solution.cost)
+        // log.Println("predicted", predictedCost)
+        // log.Println("actual", newSolution.cost)
     }
 
     return 0
