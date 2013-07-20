@@ -61,10 +61,10 @@ Subject to
     d_0 a_0_2 + d_1 a_1_2 + d_2 a_2_2 + d_3 a_3_2 <= 500 \c_2
 
 \ Each client is assigned to only one warehouse
-    a_0_0 + a_0_1 + a_0_2 <= 1
-    a_1_0 + a_1_1 + a_1_2 <= 1
-    a_2_0 + a_2_1 + a_2_2 <= 1
-    a_3_0 + a_3_1 + a_3_2 <= 1
+    a_0_0 + a_0_1 + a_0_2 == 1
+    a_1_0 + a_1_1 + a_1_2 == 1
+    a_2_0 + a_2_1 + a_2_2 == 1
+    a_3_0 + a_3_1 + a_3_2 == 1
 
 Bounds
 

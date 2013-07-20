@@ -2,8 +2,22 @@
 # -*- coding: utf-8 -*-
 
 
+#import os
+import sys
+from subprocess import Popen, PIPE
+from time import gmtime, strftime
+
+
 PIP_NAME = 'problem.pip'
+SOL_NAME = 'problem.sol'
 INDENT = ' ' * 9
+
+
+def pe(*args):
+    now = strftime("%Y-%m-%d %H:%M:%S", gmtime())
+    msg = now + ' ' + ' '.join(map(str, args)) + '\n'
+    sys.stderr.write(msg)
+    sys.stderr.flush()
 
 
 def generatePip(warehouses, customerSizes, customerCosts):
@@ -36,9 +50,10 @@ def generatePip(warehouses, customerSizes, customerCosts):
         #f.write('\n')
 
         f.write('\\ Each client is assigned to only one warehouse\n')
-        for w in range(N):
-            for c in range(M):
-                plus = ' <= 1\n' if c == M-1 else ' +'
+        f.write('\\ i.e. sum(Ac)|w=1..N == 1\n')
+        for c in range(M):
+            for w in range(N):
+                plus = ' == 1\n' if w == N-1 else ' +'
                 f.write('{0}{1}{2}\n'.format(INDENT, assignment(c, w), plus))
         #f.write('\n')
 
@@ -55,8 +70,53 @@ def generatePip(warehouses, customerSizes, customerCosts):
         f.write('End\n')
 
 
+def runSolver():
+    process = Popen(['./runSolver.sh', PIP_NAME, SOL_NAME], stdout=PIPE)
+    (stdout, stderr) = process.communicate()
+
+
+def initAssignments(N, M):
+    return [0] * M
+
+
+def parseSolution(N, M):
+    value = 0
+    clientWarehouse = initAssignments(N, M)
+
+    with open(SOL_NAME) as f:
+        f.readline() # skip 'solution found' message
+        value = f.readline()[len('objective value:'):].strip()
+        while True:
+            line = f.readline()
+            if len(line) == 0:
+                break
+            if not line.startswith('a_'): # assignment variable prefix
+                continue
+            name, val, _ = line.strip().split()
+            _, c, w = name.split('_')
+            clientWarehouse[int(c)] = int(w)
+
+    return value, clientWarehouse
+
+
+def formatSolution(obj, assignments):
+    first = '{0} 0'.format(obj, 0)
+    second = ' '.join(map(str, assignments))
+    print(first)
+    print(second)
+    return '{0}\n{1}'.format(first, second)
+
+
 def solveWLP(warehouses, customerSizes, customerCosts):
+    N = len(warehouses)
+    M = len(customerSizes)
+    pe('Generating problem description')
     generatePip(warehouses, customerSizes, customerCosts)
+    pe('Running solver')
+    runSolver()
+    obj, solution = parseSolution(N, M)
+    pe('Solution is ready')
+    return formatSolution(obj, solution)
 
 
 def solveIt(inputData):
@@ -85,9 +145,7 @@ def solveIt(inputData):
         customerSizes.append(customerSize)
         customerCosts.append(customerCost)
 
-    solveWLP(warehouses, customerSizes, customerCosts)
-
-    return
+    return solveWLP(warehouses, customerSizes, customerCosts)
 
     # build a trivial solution
     # pack the warehouses one by one until all the customers are served
@@ -119,7 +177,8 @@ def solveIt(inputData):
     outputData = str(obj) + ' ' + str(0) + '\n'
     outputData += ' '.join(map(str, solution))
 
-    return outputData
+    print(outputData)
+    #return outputData
 
 
 import sys
