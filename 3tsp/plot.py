@@ -38,7 +38,7 @@ def main():
         style["vertex_label_dist"] = 0
         style["vertex_color"] = "white"
         #igraph.plot(g, fn + ".png", **style)
-        igraph.plot(g, "solution{0}.png".format(i), **style)
+        igraph.plot(g, "snap/solution{0:05d}.png".format(i), **style)
         i += 1
 
 
