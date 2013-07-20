@@ -1,0 +1,14 @@
+Maximize
+    obj: x1 + 6 x2 + 13 x3
+Subject to
+    x1 <= 200
+    x2 <= 300
+    x1 + x2 + x3 <= 400
+    x2 + 3 x3 <= 600
+    x1 >= 0
+    x2 >= 0
+    x3 >= 0
+\Bounds
+\    x1 Binary
+\    x2 Binary
+End

@@ -1,0 +1,8 @@
+Maximize
+    obj: x1 * x2
+Subject to
+    x1 + x2 = 1
+Bounds
+    x1 Binary
+    x2 Binary
+End

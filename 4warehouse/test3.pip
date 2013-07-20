@@ -1,0 +1,104 @@
+\N = 3
+\M = 4
+\W
+\100 100.123
+\100 100.456
+\500 100.789
+\C
+\50
+\100.1 200.2 2000.3
+\50
+\100.4 200.5 2000.6
+\75
+\200.7 100.8 2000.9
+\75
+\200.1 200.11 100.12
+
+Minimize
+\ 1. Total setup cost
+    obj: s_0 a_0_0 + s_0 a_1_0 + s_0 a_2_0 + s_0 a_3_0 +
+         s_1 a_0_1 + s_1 a_1_1 + s_1 a_2_1 + s_1 a_3_1 +
+         s_2 a_0_2 + s_2 a_1_2 + s_2 a_2_2 + s_2 a_3_2 +
+\ 2. Total travel cost from client to assigned warehouse
+         t_0_0 a_0_0 + t_1_0 a_1_0 + t_2_0 a_2_0 + t_3_0 a_3_0 +
+         t_0_1 a_0_1 + t_1_1 a_1_1 + t_2_1 a_2_1 + t_3_1 a_3_1 +
+         t_0_2 a_0_2 + t_1_2 a_1_2 + t_2_2 a_2_2 + t_3_2 a_3_2
+
+Subject to
+\ Initial values
+    c_0 = 100
+    s_0 = 100.123
+
+    c_1 = 100
+    s_1 = 100.456
+
+    c_2 = 500
+    s_2 = 100.789
+
+    d_0 = 50
+    t_0_0 = 100.1
+    t_0_1 = 200.2
+    t_0_2 = 2000.3
+
+    d_1 = 50
+    t_1_0 = 100.4
+    t_1_1 = 200.5
+    t_1_2 = 2000.6
+
+    d_2 = 75
+    t_2_0 = 200.7
+    t_2_1 = 100.8
+    t_2_2 = 2000.9
+
+    d_3 = 75
+    t_3_0 = 200.1
+    t_3_1 = 200.11
+    t_3_2 = 100.12
+
+\ Total clients' demand for warehouse <= warehouse capacity
+    d_0 a_0_0 + d_1 a_1_0 + d_2 a_2_0 + d_3 a_3_0 <= 100 \c_0
+    d_0 a_0_1 + d_1 a_1_1 + d_2 a_2_1 + d_3 a_3_1 <= 100 \c_1
+    d_0 a_0_2 + d_1 a_1_2 + d_2 a_2_2 + d_3 a_3_2 <= 500 \c_2
+
+\ Each client is assigned to only one warehouse
+    a_0_0 + a_0_1 + a_0_2 <= 1
+    a_1_0 + a_1_1 + a_1_2 <= 1
+    a_2_0 + a_2_1 + a_2_2 <= 1
+    a_3_0 + a_3_1 + a_3_2 <= 1
+
+Bounds
+
+Binary
+\ Client {1} assigned to warehouse {2}
+    a_0_0
+    a_1_0
+    a_2_0
+    a_3_0
+
+    a_0_1
+    a_1_1
+    a_2_1
+    a_3_1
+
+    a_0_2
+    a_1_2
+    a_2_2
+    a_3_2
+
+End
+
+\Maximize
+\    obj: x1 + 6 x2 + 13 x3
+\Subject to
+\    x1 <= 200
+\    x2 <= 300
+\    x1 + x2 + x3 <= 400
+\    x2 + 3 x3 <= 600
+\    x1 >= 0
+\    x2 >= 0
+\    x3 >= 0
+\Bounds
+\    x1 Binary
+\    x2 Binary
+\Binary
+\End
