@@ -20,54 +20,79 @@ def pe(*args):
     sys.stderr.flush()
 
 
-def generatePip(warehouses, customerSizes, customerCosts):
-    def assignment(c, w):
-        return 'a_{0}_{1}'.format(c, w)
+class SimpleModel(object):
+    def __init__(self, warehouses, customerSizes, customerCosts):
+        self.warehouses = warehouses
+        self.customerSizes = customerSizes
+        self.customerCosts = customerCosts
+        self.N = len(warehouses)
+        self.M = len(customerSizes)
 
-    N = len(warehouses)
-    M = len(customerSizes)
-    with open(PIP_NAME, 'w') as f:
-        f.write('Minimize\n\n')
-        f.write('\\ 1. Total setup cost\n')
-        f.write('    obj:\n')
-        for w in range(N):
-            for c in range(M):
-                f.write('{0}{1} {2} +\n'.format(INDENT, warehouses[w][1], assignment(c, w)))
-        f.write('\n')
-        f.write('\\ 2. Total travel cost from client to assigned warehouse\n')
-        for w in range(N):
-            for c in range(M):
-                plus = '' if (w == N-1) and (c == M-1) else ' +'
-                f.write('{0}{1} {2}{3}\n'.format(INDENT, customerCosts[c][w], assignment(c, w), plus))
-        f.write('\n')
+    def generatePip(self):
+        def assignment(c, w):
+            return 'a_{0}_{1}'.format(c, w)
 
-        f.write('Subject to\n')
-        f.write('\\ Total clients\' demand for warehouse <= warehouse capacity\n')
-        for w in range(N):
-            for c in range(M):
-                less = ' <= {0}\n'.format(warehouses[w][0]) if c == M-1 else ' +'
-                f.write('{0}{1} {2}{3}\n'.format(INDENT, customerSizes[c], assignment(c, w), less))
-        #f.write('\n')
-
-        f.write('\\ Each client is assigned to only one warehouse\n')
-        f.write('\\ i.e. sum(Ac)|w=1..N == 1\n')
-        for c in range(M):
-            for w in range(N):
-                plus = ' == 1\n' if w == N-1 else ' +'
-                f.write('{0}{1}{2}\n'.format(INDENT, assignment(c, w), plus))
-        #f.write('\n')
-
-        f.write('Bounds\n')
-        f.write('\n')
-
-        f.write('Binary\n')
-        for w in range(N):
-            for c in range(M):
-                f.write('{0}{1}\n'.format(INDENT, assignment(c, w)))
+        with open(PIP_NAME, 'w') as f:
+            f.write('Minimize\n\n')
+            f.write('\\ 1. Total setup cost\n')
+            f.write('    obj:\n')
+            for w in range(self.N):
+                for c in range(self.M):
+                    f.write('{0}{1} {2} +\n'.format(INDENT, self.warehouses[w][1], assignment(c, w)))
             f.write('\n')
-        #f.write('\n')
+            f.write('\\ 2. Total travel cost from client to assigned warehouse\n')
+            for w in range(self.N):
+                for c in range(self.M):
+                    plus = '' if (w == self.N-1) and (c == self.M-1) else ' +'
+                    f.write('{0}{1} {2}{3}\n'.format(INDENT, self.customerCosts[c][w], assignment(c, w), plus))
+            f.write('\n')
 
-        f.write('End\n')
+            f.write('Subject to\n')
+            f.write('\\ Total clients\' demand for warehouse <= warehouse capacity\n')
+            for w in range(self.N):
+                for c in range(self.M):
+                    less = ' <= {0}\n'.format(self.warehouses[w][0]) if c == self.M-1 else ' +'
+                    f.write('{0}{1} {2}{3}\n'.format(INDENT, self.customerSizes[c], assignment(c, w), less))
+            #f.write('\n')
+
+            f.write('\\ Each client is assigned to only one warehouse\n')
+            f.write('\\ i.e. sum(Ac)|w=1..N == 1\n')
+            for c in range(self.M):
+                for w in range(self.N):
+                    plus = ' == 1\n' if w == self.N-1 else ' +'
+                    f.write('{0}{1}{2}\n'.format(INDENT, assignment(c, w), plus))
+            #f.write('\n')
+
+            f.write('Bounds\n')
+            f.write('\n')
+
+            f.write('Binary\n')
+            for w in range(self.N):
+                for c in range(self.M):
+                    f.write('{0}{1}\n'.format(INDENT, assignment(c, w)))
+                f.write('\n')
+            #f.write('\n')
+
+            f.write('End\n')
+
+    def parseSolution(self):
+        value = 0
+        clientWarehouse = initAssignments(self.N, self.M)
+
+        with open(SOL_NAME) as f:
+            f.readline() # skip 'solution found' message
+            value = f.readline()[len('objective value:'):].strip()
+            while True:
+                line = f.readline()
+                if len(line) == 0:
+                    break
+                if not line.startswith('a_'): # assignment variable prefix
+                    continue
+                name, val, _ = line.strip().split()
+                _, c, w = name.split('_')
+                clientWarehouse[int(c)] = int(w)
+
+        return value, clientWarehouse
 
 
 def runSolver():
@@ -79,26 +104,6 @@ def initAssignments(N, M):
     return [0] * M
 
 
-def parseSolution(N, M):
-    value = 0
-    clientWarehouse = initAssignments(N, M)
-
-    with open(SOL_NAME) as f:
-        f.readline() # skip 'solution found' message
-        value = f.readline()[len('objective value:'):].strip()
-        while True:
-            line = f.readline()
-            if len(line) == 0:
-                break
-            if not line.startswith('a_'): # assignment variable prefix
-                continue
-            name, val, _ = line.strip().split()
-            _, c, w = name.split('_')
-            clientWarehouse[int(c)] = int(w)
-
-    return value, clientWarehouse
-
-
 def formatSolution(obj, assignments):
     first = '{0} 0'.format(obj, 0)
     second = ' '.join(map(str, assignments))
@@ -107,14 +112,12 @@ def formatSolution(obj, assignments):
     return '{0}\n{1}'.format(first, second)
 
 
-def solveWLP(warehouses, customerSizes, customerCosts):
-    N = len(warehouses)
-    M = len(customerSizes)
+def solveWLP(model):
     pe('Generating problem description')
-    generatePip(warehouses, customerSizes, customerCosts)
+    model.generatePip()
     pe('Running solver')
     runSolver()
-    obj, solution = parseSolution(N, M)
+    obj, solution = model.parseSolution()
     pe('Solution is ready')
     return formatSolution(obj, solution)
 
@@ -145,7 +148,8 @@ def solveIt(inputData):
         customerSizes.append(customerSize)
         customerCosts.append(customerCost)
 
-    return solveWLP(warehouses, customerSizes, customerCosts)
+    model = SimpleModel(warehouses, customerSizes, customerCosts)
+    return solveWLP(model)
 
     # build a trivial solution
     # pack the warehouses one by one until all the customers are served
