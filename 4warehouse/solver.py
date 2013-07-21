@@ -43,6 +43,8 @@ class SimpleModel(object):
 
         // customer assigned to only one warehouse
         sum(a_c_w)|w = 1..N == 1 (forall c in M)
+
+    WARNING: this model is flawed and it does not guarantee optimality
     '''
     def __init__(self, warehouses, customerSizes, customerCosts):
         self.warehouses = warehouses
