@@ -274,6 +274,46 @@ def solveWLP(model):
     return model.formatSolution()
 
 
+def solveGreedy(warehouses, customerSizes, customerCosts):
+    N = len(warehouses)
+    M = len(customerSizes)
+
+    # build a trivial solution
+    # pack the warehouses one by one until all the customers are served
+
+    warehouseOrder = list(range(N))
+
+    solution = [-1] * M
+    capacityRemaining = [w[0] for w in warehouses]
+
+    warehouseIndex = 0
+    for c in range(0, M):
+        if capacityRemaining[warehouseIndex] >= customerSizes[c]:
+            solution[c] = warehouseIndex
+            capacityRemaining[warehouseIndex] -= customerSizes[c]
+        else:
+            warehouseIndex += 1
+            assert capacityRemaining[warehouseIndex] >= customerSizes[c]
+            solution[c] = warehouseIndex
+            capacityRemaining[warehouseIndex] -= customerSizes[c]
+
+    used = [0] * N
+    for wa in solution:
+        used[wa] = 1
+
+    # calculate the cost of the solution
+    obj = sum([warehouses[x][1] * used[x] for x in range(0, N)])
+    for c in range(0, M):
+        obj += customerCosts[c][solution[c]]
+
+    # prepare the solution in the specified output format
+    outputData = str(obj) + ' ' + str(0) + '\n'
+    outputData += ' '.join(map(str, solution))
+
+    print(outputData)
+    return outputData
+
+
 def solveIt(inputData):
     # Modify this code to run your optimization algorithm
 
@@ -301,8 +341,10 @@ def solveIt(inputData):
         customerCosts.append(customerCost)
 
     #model = SimpleModel(warehouses, customerSizes, customerCosts)
-    model = LectureModel(warehouses, customerSizes, customerCosts)
-    return solveWLP(model)
+    #model = LectureModel(warehouses, customerSizes, customerCosts)
+    #return solveWLP(model)
+
+    return solveGreedy(warehouses, customerSizes, customerCosts)
 
     # build a trivial solution
     # pack the warehouses one by one until all the customers are served
