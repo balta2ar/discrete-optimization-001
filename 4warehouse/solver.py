@@ -6,6 +6,8 @@
 import sys
 from subprocess import Popen, PIPE
 from time import gmtime, strftime
+import pprint
+import random
 
 
 PIP_NAME = 'problem.pip'
@@ -213,27 +215,34 @@ class LectureModel(object):
             #f.write('\n')
 
             f.write('Bounds\n')
+            #f.write('Binary\n')
             f.write('\n')
 
             f.write('Binary\n')
+            #f.write('Bounds\n')
             for w in range(self.N):
                 for c in range(self.M):
                     f.write('{0}{1}\n'.format(INDENT, assignment(c, w)))
+                    #f.write('{0}0 <= {1} <= 1\n'.format(INDENT, assignment(c, w)))
                 f.write('\n')
 
             for w in range(self.N):
                 f.write('{0}{1}\n'.format(INDENT, wopen(w)))
+                #f.write('{0}0 <= {1} <= 1\n'.format(INDENT, wopen(w)))
             #f.write('\n')
 
             f.write('End\n')
 
     def parseSolution(self):
-        value = 0
+        value = 0.0
         clientWarehouse = initAssignments(self.N, self.M)
+        self.probabilities = []
+        for _ in range(self.M):
+            self.probabilities.append([0.0] * self.N)
 
         with open(SOL_NAME) as f:
             f.readline() # skip 'solution found' message
-            value = f.readline()[len('objective value:'):].strip()
+            value = float(f.readline()[len('objective value:'):].strip())
             while True:
                 line = f.readline()
                 if len(line) == 0:
@@ -242,13 +251,76 @@ class LectureModel(object):
                     continue
                 name, val, _ = line.strip().split()
                 _, c, w = name.split('_')
-                clientWarehouse[int(c)] = int(w)
+                c, w = int(c), int(w)
+                clientWarehouse[c] = w
+                self.probabilities[c][w] = float(val)
 
         self.objectiveValue = value
         self.clientAssignments = clientWarehouse
 
+        #pe('hello', clientWarehouse)
+        #pe('hello', pprint.pformat(probabilities))
+        #pe('hello', probabilities)
+
+    def cost(self, c, w):
+        # setup cost + transportation cost
+        return self.warehouses[w][1] + self.customerCosts[c][w]
+
+    def cheapestWarehouseForClient(self, c, capacity):
+        lowestIndex = 0
+        lowestCost = self.cost(c, lowestIndex)
+        for w in range(1, self.N):
+            currentCost = self.cost(c, w)
+            if (currentCost < lowestCost) and (capacity[w] >= self.customerSizes[c]):
+                lowestCost, lowestIndex = currentCost, w
+        return lowestIndex
+
+    def roundSolutionRandomly(self):
+        capacityRemaining = [w[0] for w in self.warehouses]
+        for ci, c in enumerate(self.probabilities):
+            assigned = False
+            for wi, w in enumerate(c):
+                p = self.probabilities[ci][wi]
+                if random.random() < p:
+                    self.clientAssignments[ci] = wi
+                    pe('Assigned client {0} to warehouse {1} (p={2})'
+                       ''.format(ci, wi, p))
+                    assigned = True
+                    break
+            if not assigned:
+                #wi = random.randint(0, self.N - 1)
+                wi = self.cheapestWarehouseForClient(ci, capacityRemaining)
+                self.clientAssignments[ci] = wi
+                capacityRemaining[wi] -= self.customerSizes[ci]
+                pe('No probability worked, assigned client {0} to cheapest warehouse {1}'
+                   ''.format(ci, wi))
+                #pe('No probability worked, randomly assigned client {0} to warehouse {1}'
+                #   ''.format(ci, wi))
+
+        self.fractionalObjectiveValue = self.objectiveValue
+        self.roundedObjectiveValue = self.calcObjectiveValue()
+        self.objectiveValue = self.roundedObjectiveValue
+
+        diff = self.roundedObjectiveValue - self.fractionalObjectiveValue
+        pe('Rounded {0} - Fractional {1} = {2}'
+           ''.format(self.roundedObjectiveValue, self.fractionalObjectiveValue,
+                     diff))
+
+    def calcObjectiveValue(self):
+        objValue = 0.0
+        warehouseUsed = [False] * self.N
+        for ci in range(self.M):
+            wi = self.clientAssignments[ci]
+            # client transportation cost
+            objValue += self.customerCosts[ci][wi]
+            if not warehouseUsed[wi]:
+                warehouseUsed[wi] = True
+                # warehouse setup cost
+                objValue += self.warehouses[wi][1]
+        return objValue
+
     def formatSolution(self):
-        first = '{0} {1}'.format(self.objectiveValue, 1)
+        first = '{0} {1}'.format(self.objectiveValue, 0)
         second = ' '.join(map(str, self.clientAssignments))
         print(first)
         print(second)
@@ -265,11 +337,13 @@ def initAssignments(N, M):
 
 
 def solveWLP(model):
-    pe('Generating problem description')
-    model.generatePip()
-    pe('Running solver')
-    runSolver()
+    #pe('Generating problem description')
+    #model.generatePip()
+    #pe('Running solver')
+    #runSolver()
     model.parseSolution()
+    #model.objectiveValue = model.calcObjectiveValue()
+    #model.roundSolutionRandomly()
     pe('Solution is ready')
     return model.formatSolution()
 
@@ -281,13 +355,28 @@ def solveGreedy(warehouses, customerSizes, customerCosts):
     # build a trivial solution
     # pack the warehouses one by one until all the customers are served
 
-    warehouseOrder = list(range(N))
+    def cost(c, w):
+        # setup cost + transportation cost
+        return warehouses[w][1] + customerCosts[c][w]
+        #return customerCosts[c][w]
+        #return warehouses[w][1]
+
+    def cheapestWarehouseForClient(c, capacity):
+        lowestIndex = 0
+        lowestCost = cost(c, lowestIndex)
+        for w in range(1, N):
+            currentCost = cost(c, w)
+            if (currentCost < lowestCost) and (capacity[w] >= customerSizes[c]):
+                lowestCost, lowestIndex = currentCost, w
+        return lowestIndex
 
     solution = [-1] * M
     capacityRemaining = [w[0] for w in warehouses]
 
     warehouseIndex = 0
     for c in range(0, M):
+        warehouseIndex = cheapestWarehouseForClient(c, capacityRemaining)
+
         if capacityRemaining[warehouseIndex] >= customerSizes[c]:
             solution[c] = warehouseIndex
             capacityRemaining[warehouseIndex] -= customerSizes[c]
@@ -341,10 +430,10 @@ def solveIt(inputData):
         customerCosts.append(customerCost)
 
     #model = SimpleModel(warehouses, customerSizes, customerCosts)
-    #model = LectureModel(warehouses, customerSizes, customerCosts)
-    #return solveWLP(model)
+    model = LectureModel(warehouses, customerSizes, customerCosts)
+    return solveWLP(model)
 
-    return solveGreedy(warehouses, customerSizes, customerCosts)
+    #return solveGreedy(warehouses, customerSizes, customerCosts)
 
     # build a trivial solution
     # pack the warehouses one by one until all the customers are served
@@ -383,6 +472,7 @@ def solveIt(inputData):
 import sys
 
 if __name__ == '__main__':
+    random.seed()
     if len(sys.argv) > 1:
         fileLocation = sys.argv[1].strip()
         inputDataFile = open(fileLocation, 'r')
@@ -393,4 +483,3 @@ if __name__ == '__main__':
         #print solveIt(inputData)
     else:
         print 'This test requires an input file.  Please select one from the data directory. (i.e. python solver.py ./data/wl_16_1)'
-
