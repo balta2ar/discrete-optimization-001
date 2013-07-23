@@ -337,44 +337,87 @@ def initAssignments(N, M):
 
 
 def solveWLP(model):
-    #pe('Generating problem description')
-    #model.generatePip()
+    pe('Generating problem description')
+    model.generatePip()
     #pe('Running solver')
     #runSolver()
-    model.parseSolution()
+    #model.parseSolution()
     #model.objectiveValue = model.calcObjectiveValue()
     #model.roundSolutionRandomly()
-    pe('Solution is ready')
-    return model.formatSolution()
+    #pe('Solution is ready')
+    #return model.formatSolution()
 
 
-def solveGreedy(warehouses, customerSizes, customerCosts):
+def solveGreedyBest(warehouses, customerSizes, customerCosts):
+    bestStart = -1
+    bestCost = -1
+    bestSolution = None
+
+    for i in range(len(customerSizes)):
+        pe('Trying {0} / {1}'.format(i, len(customerSizes)))
+        cost, solution = solveGreedy(warehouses, customerSizes, customerCosts, i)
+        if (cost < bestCost) or (bestStart == -1):
+            pe('Better solution at {0}: {1} < {2}'.format(i, cost, bestCost))
+            bestCost = cost
+            bestStart = i
+            bestSolution = solution
+
+    pe('Best solution starts at client {0}: {1}'.format(bestStart, bestCost))
+    print(bestSolution)
+    return bestSolution
+
+
+def solveGreedy(warehouses, customerSizes, customerCosts, startClient=0):
     N = len(warehouses)
     M = len(customerSizes)
 
     # build a trivial solution
     # pack the warehouses one by one until all the customers are served
 
-    def cost(c, w):
-        # setup cost + transportation cost
-        return warehouses[w][1] + customerCosts[c][w]
-        #return customerCosts[c][w]
-        #return warehouses[w][1]
+    def openCost(c, w, capacity):
+        value = 0.0
+        #value = customerCosts[c][w]
+        #if capacity[w] == warehouses[w][0]:
+        value += warehouses[w][1]
+        return value
+
+    def cost(c, w, capacity):
+        value = 0.0
+        value = customerCosts[c][w]
+        #if capacity[w] == warehouses[w][0]:
+        #value += warehouses[w][1]
+        return value
+
+    cheapestWarehouses = sorted(range(M), key=lambda x: openCost(-1, x, None))
+    cheapestWarehouses = cheapestWarehouses[:6]
+    #pe(chapestWarehouses)
 
     def cheapestWarehouseForClient(c, capacity):
-        lowestIndex = 0
-        lowestCost = cost(c, lowestIndex)
-        for w in range(1, N):
-            currentCost = cost(c, w)
+        # return random.choice(cheapestWarehouses)
+
+        lowestIndex = cheapestWarehouses[0]
+        lowestCost = cost(c, lowestIndex, capacity)
+        for i in range(1, len(cheapestWarehouses)):
+            w = cheapestWarehouses[i]
+            currentCost = cost(c, w, capacity)
             if (currentCost < lowestCost) and (capacity[w] >= customerSizes[c]):
                 lowestCost, lowestIndex = currentCost, w
         return lowestIndex
+
+        # lowestIndex = 0
+        # lowestCost = cost(c, lowestIndex, capacity)
+        # for w in range(1, N):
+        #     currentCost = cost(c, w, capacity)
+        #     if (currentCost < lowestCost) and (capacity[w] >= customerSizes[c]):
+        #         lowestCost, lowestIndex = currentCost, w
+        # return lowestIndex
 
     solution = [-1] * M
     capacityRemaining = [w[0] for w in warehouses]
 
     warehouseIndex = 0
-    for c in range(0, M):
+    for i in range(0, M):
+        c = (startClient + i) % M
         warehouseIndex = cheapestWarehouseForClient(c, capacityRemaining)
 
         if capacityRemaining[warehouseIndex] >= customerSizes[c]:
@@ -400,6 +443,7 @@ def solveGreedy(warehouses, customerSizes, customerCosts):
     outputData += ' '.join(map(str, solution))
 
     print(outputData)
+    #return obj, outputData
     return outputData
 
 
@@ -430,10 +474,11 @@ def solveIt(inputData):
         customerCosts.append(customerCost)
 
     #model = SimpleModel(warehouses, customerSizes, customerCosts)
-    model = LectureModel(warehouses, customerSizes, customerCosts)
-    return solveWLP(model)
+    #model = LectureModel(warehouses, customerSizes, customerCosts)
+    #return solveWLP(model)
 
-    #return solveGreedy(warehouses, customerSizes, customerCosts)
+    return solveGreedy(warehouses, customerSizes, customerCosts)
+    #return solveGreedyBest(warehouses, customerSizes, customerCosts)
 
     # build a trivial solution
     # pack the warehouses one by one until all the customers are served
