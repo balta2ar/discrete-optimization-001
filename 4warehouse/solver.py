@@ -167,28 +167,41 @@ class LectureModel(object):
         self.M = len(customerSizes)
 
     def generatePip(self):
+        # 10 cheapest warehouses for problem #6
+        fixed = set([264, 109, 484, 462, 145, 482, 414, 401, 115, 95])
+        #fixed = set([95])
+        lastFixed = sorted(list(fixed))[-1]
+
         def assignment(c, w):
             return 'a_{0}_{1}'.format(c, w)
 
         def wopen(w):
-            return 'o_{0}'.format(w)
+            if w in fixed:
+                return 'o_{0}'.format(w)
+            else:
+                return ''
 
         with open(PIP_NAME, 'w') as f:
+
             f.write('Minimize\n\n')
             f.write('    obj:\n')
             f.write('\\ 1. Total setup cost\n')
             for w in range(self.N):
                 #for c in range(self.M):
                     #f.write('{0}{1} {2} +\n'.format(INDENT, self.warehouses[w][1], assignment(c, w)))
-                f.write('{0}{1} {2} +\n'.format(INDENT, self.warehouses[w][1], wopen(w)))
+                if w in fixed:
+                    f.write('{0}{1} {2} +\n'.format(INDENT, self.warehouses[w][1], wopen(w)))
             f.write('\n')
 
             f.write('\\ 2. Total travel cost from client to assigned warehouse\n')
             for w in range(self.N):
                 for c in range(self.M):
-                    plus = '' if (w == self.N-1) and (c == self.M-1) else ' +'
-                    f.write('{0}{1} {2}{3}\n'.format(INDENT, self.customerCosts[c][w], assignment(c, w), plus))
-                f.write('\n')
+                    #plus = '' if (w == self.N-1) and (c == self.M-1) else ' +'
+                    plus = '' if (w == lastFixed) and (c == self.M-1) else ' +'
+                    if w in fixed:
+                        f.write('{0}{1} {2}{3}\n'.format(INDENT, self.customerCosts[c][w], assignment(c, w), plus))
+                if w in fixed:
+                    f.write('\n')
 
             f.write('Subject to\n')
             f.write('\\ 1. Assign customer to open warehouse only\n')
@@ -196,22 +209,27 @@ class LectureModel(object):
             for c in range(self.M):
                 for w in range(self.N):
                     plus = ' <= 0'
-                    f.write('{0}{1} - {2}{3}\n'.format(INDENT, assignment(c, w), wopen(w), plus))
-                f.write('\n')
+                    if w in fixed:
+                        f.write('{0}{1} - {2}{3}\n'.format(INDENT, assignment(c, w), wopen(w), plus))
+                if w in fixed:
+                    f.write('\n')
 
             f.write('\\ 2. Each client is assigned to only one warehouse\n')
             f.write('\\ i.e. sum(Ac)|w=1..N == 1\n')
             for c in range(self.M):
                 for w in range(self.N):
-                    plus = ' == 1\n' if w == self.N-1 else ' +'
-                    f.write('{0}{1}{2}\n'.format(INDENT, assignment(c, w), plus))
+                    plus = ' +'  # ' == 1\n' if w == self.N-1 else ' +'
+                    if w in fixed:
+                        f.write('{0}{1}{2}\n'.format(INDENT, assignment(c, w), plus))
+                f.write('{0}0 == 1\n'.format(INDENT))
             #f.write('\n')
 
             f.write('\\ 3. Total clients\' demand for warehouse <= warehouse capacity\n')
             for w in range(self.N):
                 for c in range(self.M):
                     less = ' <= {0}\n'.format(self.warehouses[w][0]) if c == self.M-1 else ' +'
-                    f.write('{0}{1} {2}{3}\n'.format(INDENT, self.customerSizes[c], assignment(c, w), less))
+                    if w in fixed:
+                        f.write('{0}{1} {2}{3}\n'.format(INDENT, self.customerSizes[c], assignment(c, w), less))
             #f.write('\n')
 
             f.write('Bounds\n')
@@ -222,12 +240,15 @@ class LectureModel(object):
             #f.write('Bounds\n')
             for w in range(self.N):
                 for c in range(self.M):
-                    f.write('{0}{1}\n'.format(INDENT, assignment(c, w)))
+                    if w in fixed:
+                        f.write('{0}{1}\n'.format(INDENT, assignment(c, w)))
                     #f.write('{0}0 <= {1} <= 1\n'.format(INDENT, assignment(c, w)))
-                f.write('\n')
+                if w in fixed:
+                    f.write('\n')
 
             for w in range(self.N):
-                f.write('{0}{1}\n'.format(INDENT, wopen(w)))
+                if w in fixed:
+                    f.write('{0}{1}\n'.format(INDENT, wopen(w)))
                 #f.write('{0}0 <= {1} <= 1\n'.format(INDENT, wopen(w)))
             #f.write('\n')
 
@@ -337,15 +358,15 @@ def initAssignments(N, M):
 
 
 def solveWLP(model):
-    pe('Generating problem description')
-    model.generatePip()
+    #pe('Generating problem description')
+    #model.generatePip()
     #pe('Running solver')
     #runSolver()
-    #model.parseSolution()
+    model.parseSolution()
     #model.objectiveValue = model.calcObjectiveValue()
     #model.roundSolutionRandomly()
-    #pe('Solution is ready')
-    #return model.formatSolution()
+    pe('Solution is ready')
+    return model.formatSolution()
 
 
 def solveGreedyBest(warehouses, customerSizes, customerCosts):
@@ -389,8 +410,8 @@ def solveGreedy(warehouses, customerSizes, customerCosts, startClient=0):
         return value
 
     cheapestWarehouses = sorted(range(M), key=lambda x: openCost(-1, x, None))
-    cheapestWarehouses = cheapestWarehouses[:6]
-    #pe(chapestWarehouses)
+    cheapestWarehouses = cheapestWarehouses[:10]
+    pe(cheapestWarehouses)
 
     def cheapestWarehouseForClient(c, capacity):
         # return random.choice(cheapestWarehouses)
@@ -474,10 +495,10 @@ def solveIt(inputData):
         customerCosts.append(customerCost)
 
     #model = SimpleModel(warehouses, customerSizes, customerCosts)
-    #model = LectureModel(warehouses, customerSizes, customerCosts)
-    #return solveWLP(model)
+    model = LectureModel(warehouses, customerSizes, customerCosts)
+    return solveWLP(model)
 
-    return solveGreedy(warehouses, customerSizes, customerCosts)
+    #return solveGreedy(warehouses, customerSizes, customerCosts)
     #return solveGreedyBest(warehouses, customerSizes, customerCosts)
 
     # build a trivial solution
