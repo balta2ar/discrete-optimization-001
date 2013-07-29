@@ -211,24 +211,6 @@ func printSolution(solution Solution) {
 //     }
 // }
 
-// tries greedy alg for all the points in the graph and selects the best
-// func (ctx Context) solveGreedyBest() Solution {
-//     bestSolution := ctx.solveGreedyFrom(0)
-// 
-//     for i := 1; i < ctx.N; i++ {
-//         solution := ctx.solveGreedyFrom(i)
-//         if solution.Cost < bestSolution.Cost {
-//             bestSolution = solution
-//         }
-//     }
-// 
-//     return bestSolution
-// }
-
-// func (ctx Context) solveGreedyRandom() Solution {
-//     return ctx.solveGreedyFrom(rand.Int() % ctx.N)
-// }
-
 // randomly select two non-adjacent points
 // func (ctx Context) selectPoints(solution Solution) (int, int) {
 //     p1 := rand.Int() % ctx.N
@@ -686,72 +668,98 @@ func (ctx Context) nearestCustomer(v int, active []bool, capacityLeft int) int {
     return bestCustomer
 }
 
+func (path *Path) appendCustomer(ctx *Context, lastCustomer, customer int) {
+    //lastCustomer := path.VertexOrder[len(path.VertexOrder)-1]
+    path.Cost += ctx.dist(lastCustomer, customer)
+    path.VertexOrder = append(path.VertexOrder, customer)
+}
+
 // solves the problem from the specified point
 // enumerate all the points to get the best greedy solution
-func (ctx Context) solveGreedyFrom() Solution {
+func (ctx Context) solveGreedyFrom(startingCustomer int) Solution {
     paths := []Path{}
     totalCost := float32(0.0)
-    activeClients := make([]bool, ctx.N)
+    activeCustomers := make([]bool, ctx.N)
     numVisitedCustomers := 0
+    localStartingCustomer := startingCustomer
 
     for i := 0; i < ctx.N; i++ {
-        activeClients[i] = true
+        activeCustomers[i] = true
     }
-    //log.Println(activeClients)
+    //log.Println(activeCustomers)
+
+    // lastCustomer := startingCustomer
+    // path := Path{float32(0), []int{0}}
+    // path.appendCustomer(&ctx, 0, lastCustomer)
+    // capacityLeft := ctx.C - ctx.Clients[lastCustomer].Demand
 
     // fill route for each vehicle while capacity remains
     for v := 0; v < ctx.V; v++ {
-        //cost := float32(0.0)
-        //route := []int{0}
         path := Path{float32(0), []int{0}}
         capacityLeft := ctx.C
 
         for {
+            if localStartingCustomer > 0 {
+                path.appendCustomer(&ctx, 0, localStartingCustomer)
+                capacityLeft -= ctx.Clients[localStartingCustomer].Demand
+                localStartingCustomer = -1
+            }
+
             lastCustomer := path.VertexOrder[len(path.VertexOrder)-1]
             nextCustomer := ctx.nearestCustomer(lastCustomer,
-                                                activeClients,
+                                                activeCustomers,
                                                 capacityLeft)
             path.Cost += ctx.dist(lastCustomer, nextCustomer)
             path.VertexOrder = append(path.VertexOrder, nextCustomer)
             if nextCustomer == 0 { // warehouse returned => no customer can fit
                 break
-            } else {
-                activeClients[nextCustomer] = false
-                capacityLeft -= ctx.Clients[nextCustomer].Demand
-                numVisitedCustomers += 1
             }
+
+            activeCustomers[nextCustomer] = false
+            capacityLeft -= ctx.Clients[nextCustomer].Demand
+            numVisitedCustomers += 1
         }
 
         totalCost += path.Cost
         paths = append(paths, path)
     }
 
+    if numVisitedCustomers < ctx.N-1 {
+        log.Printf("Not all customers were visited: %d of %d (%d, %f)\n",
+                    numVisitedCustomers, ctx.N-1, startingCustomer,
+                    totalCost)
+        return Solution{math.MaxFloat32, nil}
+    } else {
+        log.Printf("Solution: %f (%d)\n", totalCost, startingCustomer)
+    }
     return Solution{totalCost, paths}
+}
 
-    // nextPoint := 0
-    // var pathLen float64 = 0
-    // var pointOrder = make([]int, ctx.N)
+// tries greedy alg for all the points in the graph and selects the best
+func (ctx Context) solveGreedyBest() Solution {
+    bestSolution := ctx.solveGreedyFrom(1)
 
-    // pointOrder[0] = currentPoint
-    // ctx.setActive(true)
+    for i := 2; i < ctx.N; i++ {
+        solution := ctx.solveGreedyFrom(i)
+        //log.Println("another solution", solution.Cost)
+        if solution.Cost < bestSolution.Cost {
+            bestSolution = solution
+        }
+    }
 
-    // for i := 1; i < ctx.N; i++ {
-    //     nextPoint = ctx.nearestTo(currentPoint)
-    //     pointOrder[i] = nextPoint
-    //     pathLen += ctx.dist(currentPoint, nextPoint)
-    //     ctx.Ps[currentPoint].Active = false
-    //     currentPoint = nextPoint
-    // }
+    return bestSolution
+}
 
-    // pathLen += ctx.dist(pointOrder[ctx.N-1], pointOrder[0])
-    // return Solution{pointOrder, pathLen}
+func (ctx Context) solveGreedyRandom() Solution {
+    return ctx.solveGreedyFrom((rand.Int() % (ctx.N - 1)) + 1)
 }
 
 func solveFile(filename string, alg string) int {
     ctx := createContext(filename)
 
     //log.Println(ctx)
-    solution := ctx.solveGreedyFrom()
+    //solution := ctx.solveGreedyFrom(1)
+    solution := ctx.solveGreedyBest()
     printSolution(solution)
 
     // switch {

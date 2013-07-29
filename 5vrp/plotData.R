@@ -17,6 +17,7 @@ depo <- tt[1,]
 
 pl <- ggplot( tt, aes(x=V2, y=V3, size=V1) ) + 
   geom_point( color='navyblue' ) +
-  geom_point( size=9, color='darkgreen', data=depo )
+  geom_point( size=9, color='darkgreen', data=depo ) +
+  theme_bw()
 
 ggsave(plot=pl, file=output, width=6, height=6 )

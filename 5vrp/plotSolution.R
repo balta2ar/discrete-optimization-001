@@ -23,7 +23,7 @@ conn <- file(problem, 'r')
 header <- readLines(conn, 1)
 info <- as.integer(read.table(textConnection(header))[1,])
 V <- info[2]
-print(V)
+#print(V)
 
 d <- na.omit(read.table(conn, sep=' ', header=F, skip=0, blank.lines.skip=T))
 x <- d$V2
