@@ -47,6 +47,12 @@ type Context struct {
     // N int
 }
 
+type CustomerMove struct {
+    vehicleFrom, customerFrom int
+    vehicleTo, customerTo int
+    newCost float32
+}
+
 type Path struct {
     Cost float32
     VertexOrder []int
@@ -211,19 +217,109 @@ func printSolution(solution Solution) {
 //     }
 // }
 
-// randomly select two non-adjacent points
-// func (ctx Context) selectPoints(solution Solution) (int, int) {
-//     p1 := rand.Int() % ctx.N
-//     p3 := rand.Int() % ctx.N
+// randomly select two customers
+// return: route1, customer1, route2, customer2
+func (ctx Context) selectCustomerMove(solution Solution) CustomerMove {
+    vehicleFrom := rand.Int() % ctx.V
+    for len(solution.Paths[vehicleFrom].VertexOrder) < 3 {
+        vehicleFrom = rand.Int() % ctx.V
+    }
+
+    vFrom := solution.Paths[vehicleFrom].VertexOrder
+    customerFrom := (rand.Int() % (len(vFrom) - 2)) + 1
+
+    vehicleTo := rand.Int() % ctx.V
+    vTo := solution.Paths[vehicleTo].VertexOrder
+    customerTo := rand.Int() % (len(vTo) - 1)
+    for (vehicleFrom == vehicleTo) && (customerFrom != customerTo) {
+        vehicleTo = rand.Int() % ctx.V
+        vTo = solution.Paths[vehicleTo].VertexOrder
+        customerTo = rand.Int() % (len(vTo) - 1)
+    }
+
+    return CustomerMove{vehicleFrom, customerFrom, vehicleTo, customerTo, 0}
+}
+
+func (ctx Context) predictCost(move CustomerMove, solution Solution) {
+}
+
+func (ctx Context) moveCustomer(move CustomerMove,
+                                origSolution Solution) Solution {
+    return origSolution
+}
+
+// func reconnectPoints(p1, p3 int, origSolution Solution) Solution {
+//     N := len(origSolution.Order)
 // 
-//     // p3 must not be near p1
-//     for p3 == p1 || p3 == (p1+1) % ctx.N || (p3+1) % ctx.N == p1 {
-//         p3 = rand.Int() % ctx.N
+//     solution := cloneSolution(origSolution)
+//     // solution := origSolution
+//     // solution.Order = make([]int, N)
+//     // copy(solution.Order, origSolution.Order)
+// 
+//     //t1 := solution.Order[p1]
+//     t2 := solution.Order[(p1+1) % N]
+// 
+//     t3 := solution.Order[(p3+1) % N]
+//     t4 := solution.Order[p3]
+// 
+//     // t3InOrder := findInSlice(t3, solution.Order)
+//     // t3InOrderPrev := (t3InOrder-1) % N
+//     // if t3InOrderPrev < 0 {
+//     //     // stupid Go
+//     //     t3InOrderPrev = N + t3InOrderPrev
+//     // }
+// 
+//     //log.Println("t3InOrderPrev", t3InOrderPrev)
+//     //t4 := solution.Order[t3InOrderPrev]
+//     //log.Println("t3InOrder", t3InOrder, "t4", t4)
+// 
+//     t3InOrder := (p3+1) % N
+//     //t3InOrderPrev := p3
+// 
+//     selected := p1
+// 
+//     // there is a part of graph order which needs to be reversed
+//     // from next(t2) == selected+2 (inclusive)
+//     // to t4 == t3InOrder-1 (not inclusive)
+//     from := selected+2 // inclusive
+//     to := t3InOrder-1 // not inclusive
+//     var length int
+//     if from <= to {
+//         length = to-from
+//     } else {
+//         length = (N-from) + to
+//     }
+//     orderPart := make([]int, length)
+//     for i := 0; i < length; i++ {
+//         orderPart[i] = solution.Order[(from+i) % N]
 //     }
 // 
-//     return p1, p3
+//     // reverse
+//     for i, j := 0, length-1; i < j; i, j = i+1, j-1 {
+//         orderPart[i], orderPart[j] = orderPart[j], orderPart[i]
+//     }
+// 
+//     // now fix solution order
+//     ptr := selected+1
+// 
+//     // t1 - - -> t4
+//     solution.Order[ptr % N] = t4
+//     ptr++
+// 
+//     // insert reversed part order
+//     for i := 0; i < len(orderPart); i++ {
+//         solution.Order[ptr % N] = orderPart[i]
+//         ptr++
+//     }
+// 
+//     // insert t2 => t3 connection
+//     solution.Order[ptr % N] = t2
+//     ptr++
+//     solution.Order[ptr % N] = t3
+// 
+//     return solution
 // }
-
+// 
 // create new solution with swapped points and
 // new cost recalculated from scratch (I used to
 // have huge cumulative errors going from predictCost)
@@ -365,78 +461,6 @@ func printSolution(solution Solution) {
 //     newSolution.Order = make([]int, len(solution.Order))
 //     copy(newSolution.Order, solution.Order)
 //     return newSolution
-// }
-// 
-// func reconnectPoints(p1, p3 int, origSolution Solution) Solution {
-//     N := len(origSolution.Order)
-// 
-//     solution := cloneSolution(origSolution)
-//     // solution := origSolution
-//     // solution.Order = make([]int, N)
-//     // copy(solution.Order, origSolution.Order)
-// 
-//     //t1 := solution.Order[p1]
-//     t2 := solution.Order[(p1+1) % N]
-// 
-//     t3 := solution.Order[(p3+1) % N]
-//     t4 := solution.Order[p3]
-// 
-//     // t3InOrder := findInSlice(t3, solution.Order)
-//     // t3InOrderPrev := (t3InOrder-1) % N
-//     // if t3InOrderPrev < 0 {
-//     //     // stupid Go
-//     //     t3InOrderPrev = N + t3InOrderPrev
-//     // }
-// 
-//     //log.Println("t3InOrderPrev", t3InOrderPrev)
-//     //t4 := solution.Order[t3InOrderPrev]
-//     //log.Println("t3InOrder", t3InOrder, "t4", t4)
-// 
-//     t3InOrder := (p3+1) % N
-//     //t3InOrderPrev := p3
-// 
-//     selected := p1
-// 
-//     // there is a part of graph order which needs to be reversed
-//     // from next(t2) == selected+2 (inclusive)
-//     // to t4 == t3InOrder-1 (not inclusive)
-//     from := selected+2 // inclusive
-//     to := t3InOrder-1 // not inclusive
-//     var length int
-//     if from <= to {
-//         length = to-from
-//     } else {
-//         length = (N-from) + to
-//     }
-//     orderPart := make([]int, length)
-//     for i := 0; i < length; i++ {
-//         orderPart[i] = solution.Order[(from+i) % N]
-//     }
-// 
-//     // reverse
-//     for i, j := 0, length-1; i < j; i, j = i+1, j-1 {
-//         orderPart[i], orderPart[j] = orderPart[j], orderPart[i]
-//     }
-// 
-//     // now fix solution order
-//     ptr := selected+1
-// 
-//     // t1 - - -> t4
-//     solution.Order[ptr % N] = t4
-//     ptr++
-// 
-//     // insert reversed part order
-//     for i := 0; i < len(orderPart); i++ {
-//         solution.Order[ptr % N] = orderPart[i]
-//         ptr++
-//     }
-// 
-//     // insert t2 => t3 connection
-//     solution.Order[ptr % N] = t2
-//     ptr++
-//     solution.Order[ptr % N] = t3
-// 
-//     return solution
 // }
 // 
 // func (ctx Context) greedy2Opt(solution Solution) Solution {

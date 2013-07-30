@@ -23,20 +23,23 @@ conn <- file(problem, 'r')
 header <- readLines(conn, 1)
 info <- as.integer(read.table(textConnection(header))[1,])
 V <- info[2]
-#print(V)
+colors <- colorRampPalette(brewer.pal(8, 'Dark2'))(V)
+print(V)
+print(colors)
 
 d <- na.omit(read.table(conn, sep=' ', header=F, skip=0, blank.lines.skip=T))
 x <- d$V2
 y <- d$V3
 plot(x, y)
+text(x, y, labels=1:length(x), pos=1, cex=2)
+legend(min(x), max(y), 1:V, col=colors,
+       lty=c(1,1), lwd=c(5, 5), cex=2)
 
 first <-function(x) x[1:(length(x)-1)]
 last <- function(x) x[2:(length(x))]
 lshift <- function(x) c(x[2:length(x)], x[1])
 
-colors <- colorRampPalette(brewer.pal(8, 'Dark2'))(V)
 i <- 1
-
 conn <- file(solution, 'r')
 l <- readLines(conn, 1)
 l <- readLines(conn, 1)
