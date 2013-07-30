@@ -702,7 +702,9 @@ func (ctx Context) solveGreedyFrom(startingCustomer int) Solution {
             if localStartingCustomer > 0 {
                 path.appendCustomer(&ctx, 0, localStartingCustomer)
                 capacityLeft -= ctx.Clients[localStartingCustomer].Demand
+                activeCustomers[localStartingCustomer] = false
                 localStartingCustomer = -1
+                numVisitedCustomers += 1
             }
 
             lastCustomer := path.VertexOrder[len(path.VertexOrder)-1]
@@ -758,7 +760,7 @@ func solveFile(filename string, alg string) int {
     ctx := createContext(filename)
 
     //log.Println(ctx)
-    //solution := ctx.solveGreedyFrom(1)
+    // solution := ctx.solveGreedyFrom(12)
     solution := ctx.solveGreedyBest()
     printSolution(solution)
 
