@@ -220,7 +220,7 @@ func printSolution(solution Solution) {
 
 func (ctx Context) selectFeasibleMove(solution Solution) CustomerMove {
     move := ctx.selectCustomerMove(solution)
-    for !ctx.isFeasible(move, solution) {
+    for !ctx.isFeasibleMove(move, solution) {
         move = ctx.selectCustomerMove(solution)
     }
     return move
@@ -254,7 +254,7 @@ func (ctx Context) selectCustomerMove(solution Solution) CustomerMove {
     }
 
     move := CustomerMove{pathFrom, customerFrom, pathTo, customerTo, 0, false}
-    move.Feasible = ctx.isFeasible(move, solution)
+    move.Feasible = ctx.isFeasibleMove(move, solution)
     move.NewCost = ctx.costAfterMove(move, solution)
     //return CustomerMove{2, 1, 2, 2, 0, true}
     //return CustomerMove{2, 1, 1, 5, 0, true}
@@ -285,15 +285,34 @@ func (ctx Context) solutionCost(solution Solution) float32 {
     return cost
 }
 
-func (ctx Context) isFeasible(move CustomerMove, solution Solution) bool {
+func (ctx Context) isFeasibleMove(move CustomerMove, solution Solution) bool {
     if move.PathFrom == move.PathTo {
         return true
     }
     path := solution.Paths[move.PathTo]
     newDemand := ctx.pathDemand(path)
-    newDemand += ctx.Clients[path.VertexOrder[move.CustomerFrom]].Demand
+    newDemand += ctx.Clients[path.VertexOrder[move.CustomerTo]].Demand
     // log.Println("newDemand", newDemand, "C", ctx.C)
-    return newDemand < ctx.C
+    return newDemand <= ctx.C
+}
+
+func (ctx Context) isFeasibleSolution(solution Solution) bool {
+    for _, path := range solution.Paths {
+        if ctx.pathDemand(path) > ctx.C {
+            return false
+        }
+    }
+
+    return true
+
+    // if move.PathFrom == move.PathTo {
+    //     return true
+    // }
+    // path := solution.Paths[move.PathTo]
+    // newDemand := ctx.pathDemand(path)
+    // newDemand += ctx.Clients[path.VertexOrder[move.CustomerTo]].Demand
+    // // log.Println("newDemand", newDemand, "C", ctx.C)
+    // return newDemand < ctx.C
 }
 
 func (ctx Context) costAfterMove(move CustomerMove, solution Solution) float32 {
@@ -466,7 +485,8 @@ func (ctx Context) localSearch(currentSolution Solution, temperature float64) So
     solution := cloneSolution(currentSolution)
     for k := 0; k < 10000; k++ {
         // p1, p3 := ctx.selectPoints(solution)
-        move := ctx.selectFeasibleMove(solution)
+        //move := ctx.selectFeasibleMove(solution)
+        move := ctx.selectCustomerMove(solution)
         predictedCost := move.NewCost //ctx.predictCost(p1, p3, solution)
         costDiff := float64(predictedCost - solution.Cost)
         //log.Println(p1, p3, costDiff)
@@ -521,7 +541,7 @@ func (ctx Context) simulatedAnnealing() Solution {
         // }
 
         solution = ctx.localSearch(solution, t)
-        if solution.Cost < bestSolution.Cost {
+        if (solution.Cost < bestSolution.Cost) && ctx.isFeasibleSolution(solution) {
             diff := bestSolution.Cost - solution.Cost
             log.Printf("1 | new solution, t %f cost %f diff %f\n", t, solution.Cost, diff)
             bestSolution = solution
@@ -911,7 +931,7 @@ func solveFile(filename string, alg string) int {
     // // move := ctx.selectCustomerMove(solution)
     // move := ctx.selectFeasibleMove(solution)
     // // move = CustomerMove{0, 5, 2, 4, 0}
-    // // log.Println("move", move, "feasible", ctx.isFeasible(move, solution))
+    // // log.Println("move", move, "feasible", ctx.isFeasibleMove(move, solution))
     // solution = ctx.applyMove(move, solution)
     // printSolution(solution)
 
