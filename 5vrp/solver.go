@@ -277,6 +277,17 @@ func (ctx Context) pathCost(path Path) float32 {
     return cost
 }
 
+func (ctx Context) overCapacity(solution Solution) float32 {
+    over := float32(0)
+    for _, path := range solution.Paths {
+        demandDiff := ctx.pathDemand(path) - ctx.C
+        if demandDiff > 0 {
+            over += float32(demandDiff)
+        }
+    }
+    return over
+}
+
 func (ctx Context) solutionCost(solution Solution) float32 {
     cost := float32(0)
     for i := 0; i < len(solution.Paths); i++ {
@@ -318,6 +329,18 @@ func (ctx Context) isFeasibleSolution(solution Solution) bool {
 func (ctx Context) costAfterMove(move CustomerMove, solution Solution) float32 {
     cost := solution.Cost
 
+    // special cases
+    if (move.PathFrom == move.PathTo) && (move.CustomerFrom+1 == move.CustomerTo) {
+        // ..., CustomerFrom, CustomerTo, ...
+        // swap CustomerFrom and CustomerTo
+    }
+
+    if (move.PathFrom == move.PathTo) && (move.CustomerTo+1 == move.CustomerFrom) {
+        // ..., CustomerTo, CustomerFrom ...
+        // do nothing, CustomerFrom will be inserted into the same position
+        return cost
+    }
+
     // remove "from" customer
     cFrom := solution.Paths[move.PathFrom].VertexOrder[move.CustomerFrom]
     cFromNext := solution.Paths[move.PathFrom].VertexOrder[move.CustomerFrom+1]
@@ -326,9 +349,16 @@ func (ctx Context) costAfterMove(move CustomerMove, solution Solution) float32 {
     cost -= ctx.dist(cFrom, cFromPrev)
     cost += ctx.dist(cFromPrev, cFromNext)
 
+    customerTo := move.CustomerTo
+    customerToNext := customerTo + 1
+    cToNext := solution.Paths[move.PathTo].VertexOrder[customerToNext]
+    cToPrev := solution.Paths[move.PathTo].VertexOrder[customerTo]
+
+    // if move.PathFrom == move.PathTo {
+    //     
+    // }
+
     // add "to" customer
-    cToNext := solution.Paths[move.PathTo].VertexOrder[move.CustomerTo+1]
-    cToPrev := solution.Paths[move.PathTo].VertexOrder[move.CustomerTo]
     cost -= ctx.dist(cToPrev, cToNext)
     cost += ctx.dist(cFrom, cToPrev)
     cost += ctx.dist(cFrom, cToNext)
@@ -374,6 +404,7 @@ func (ctx Context) applyMove(move CustomerMove,
     // log.Println("new pathTo len", len(solution.Paths[move.PathTo].VertexOrder))
     // log.Println("new pathTo", pathTo)
 
+    solution.Cost = move.NewCost
     return solution
 }
 
@@ -480,36 +511,50 @@ func cloneSolution(solution Solution) Solution {
 //     return acceptedSolution
 // }
 
+func color(msg string, color int) string {
+    return fmt.Sprintf("\033[%dm%s\033[0m", color, msg)
+}
+
+func green(msg string) string { return color(msg, 32) }
+func red(msg string) string { return color(msg, 31) }
+
 // run local search with Metropolis meta-heuristic
 func (ctx Context) localSearch(currentSolution Solution, temperature float64) Solution {
     solution := cloneSolution(currentSolution)
-    for k := 0; k < 10000; k++ {
-        // p1, p3 := ctx.selectPoints(solution)
+    // log.Println("starting with solution cost", solution.Cost)
+    for k := 0; k < 100000; k++ {
         //move := ctx.selectFeasibleMove(solution)
         move := ctx.selectCustomerMove(solution)
-        predictedCost := move.NewCost //ctx.predictCost(p1, p3, solution)
+        predictedCost := move.NewCost
+        demandExcess := ctx.overCapacity(solution)
+        predictedCost += demandExcess
         costDiff := float64(predictedCost - solution.Cost)
-        //log.Println(p1, p3, costDiff)
 
         if predictedCost <= solution.Cost {
-            //log.Println("taking predicted solution, costDiff", costDiff)
-            //solution = reconnectPoints(p1, p3, solution)
-            //solution.Cost = predictedCost
-            // solution = ctx.acceptPredictedSolution(p1, p3, solution)
+            // log.Println(costDiff, "=", predictedCost, "-", solution.Cost)
+            // log.Println("taking predicted solution, costDiff", costDiff)
             solution = ctx.applyMove(move, solution)
+            calculatedCost := ctx.solutionCost(solution)
+            solution.Cost = calculatedCost
+            // log.Println("cost after accept", solution.Cost, "calculatedCost", calculatedCost)
         } else {
             probability := math.Exp(- costDiff / temperature)
             //log.Println("prob", probability)
 
             if rand.Float64() < probability {
-                //log.Println("taking bad solution", costDiff)
-                //solution = reconnectPoints(p1, p3, solution)
-                //solution.Cost = predictedCost
-                // solution = ctx.acceptPredictedSolution(p1, p3, solution)
+                // log.Println(costDiff, "=", predictedCost, "-", solution.Cost)
+                // log.Println("taking bad solution", costDiff, probability)
                 solution = ctx.applyMove(move, solution)
+                calculatedCost := ctx.solutionCost(solution)
+                if math.Abs(float64(solution.Cost - calculatedCost)) > 10.0 {
+                    log.Println("suspicious move", move)
+                    log.Println("cost after accept", solution.Cost, "calculatedCost", calculatedCost)
+                }
+                solution.Cost = calculatedCost
             }
         }
     }
+    // log.Println("ending with solution cost", solution.Cost)
     return solution
 }
 
@@ -527,23 +572,35 @@ func (ctx Context) simulatedAnnealing() Solution {
 
     // solution = *loadSolution("solution.last.bin")
 
-    solution := ctx.solveGreedyBest()
+    // solution := ctx.solveGreedyBest()
+    solution := ctx.solveRandom()
+    // return solution
+
     bestSolution := solution
-    t := 1000.0
+    t := 100.0
     // 0.99991 -- 327K
-    alpha := 0.999
+    alpha := 0.9995
 
     log.Println("start solution, t", t, "cost", solution.Cost)
     //for k := 0; k < 200000; k++ {
-    for t > 0.5 {
+    for t > 3.0 {
         // if t < 40.0 {
         //     alpha = 0.999999
         // }
 
         solution = ctx.localSearch(solution, t)
-        if (solution.Cost < bestSolution.Cost) && ctx.isFeasibleSolution(solution) {
+        feasible := ctx.isFeasibleSolution(solution)
+        if (solution.Cost < bestSolution.Cost) && feasible {
+        // if (solution.Cost < bestSolution.Cost) {
             diff := bestSolution.Cost - solution.Cost
-            log.Printf("1 | new solution, t %f cost %f diff %f\n", t, solution.Cost, diff)
+            msg := fmt.Sprintf("1 | new solution, t %f cost %f diff %f feasible %t",
+                               t, solution.Cost, diff, feasible)
+            if feasible {
+                msg = green(msg)
+            } else {
+                msg = red(msg)
+            }
+            log.Printf("%s\n", msg)
             bestSolution = solution
 
             //saveSolution(&solution, "solution.current.bin")
@@ -899,6 +956,32 @@ func (ctx Context) solveGreedyFrom(startingCustomer int) Solution {
     return Solution{totalCost, paths}
 }
 
+// just random customer assignement
+func (ctx Context) solveRandom() Solution {
+    solution := Solution{0.0, make([]Path, ctx.V)}
+    for i := 0; i < ctx.V; i++ {
+        solution.Paths[i] = Path{float32(0), []int{0}}
+    }
+
+    for i := 0; i < ctx.N; i++ {
+        // assign customer to random path
+        path := rand.Int() % ctx.V
+        last := solution.Paths[path].VertexOrder[len(solution.Paths[path].VertexOrder)-1]
+        solution.Paths[path].Cost += ctx.dist(last, i)
+        solution.Paths[path].VertexOrder = append(solution.Paths[path].VertexOrder, i)
+    }
+
+    // close path back to warehouse
+    for i := 0; i < ctx.V; i++ {
+        last := solution.Paths[i].VertexOrder[len(solution.Paths[i].VertexOrder)-1]
+        solution.Paths[i].Cost += ctx.dist(last, 0)
+        solution.Paths[i].VertexOrder = append(solution.Paths[i].VertexOrder, 0)
+        solution.Cost += solution.Paths[i].Cost
+    }
+
+    return solution
+}
+
 // tries greedy alg for all the points in the graph and selects the best
 func (ctx Context) solveGreedyBest() Solution {
     bestSolution := ctx.solveGreedyFrom(1)
@@ -922,6 +1005,8 @@ func solveFile(filename string, alg string) int {
     ctx := createContext(filename)
 
     solution := ctx.simulatedAnnealing()
+    // calcCost := ctx.solutionCost(solution)
+    // log.Println("actual cost", solution.Cost, "calc cost", calcCost)
     printSolution(solution)
 
     // //log.Println(ctx)
@@ -1014,6 +1099,8 @@ func solveFile(filename string, alg string) int {
 }
 
 func main() {
+    // log.Printf("\033[32m 1 | new solution, t cost diff feasible \033[0m\n")
+    // return
     rand.Seed(time.Now().UTC().UnixNano())
     alg := "auto"
     if len(os.Args) > 2 {

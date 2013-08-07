@@ -31,8 +31,7 @@ d <- na.omit(read.table(conn, sep=' ', header=F, skip=0, blank.lines.skip=T))
 x <- d$V2
 y <- d$V3
 plot(x, y)
-legend(min(x), max(y), (1:V)-1, col=colors,
-       lty=c(1,1), lwd=c(5, 5), cex=2)
+legendLabels = (1:V)-1
 
 first <-function(x) x[1:(length(x)-1)]
 last <- function(x) x[2:(length(x))]
@@ -44,6 +43,7 @@ l <- readLines(conn, 1)
 l <- readLines(conn, 1)
 while (length(l) == 1) {
     o <- as.integer(read.table(textConnection(l))[1,]) + 1
+    legendLabels[i] <- paste(legendLabels[i], '/', length(o)-2, sep='')
     if (length(o) > 2) {
         a <- first(x[o])
         b <- first(y[o])
@@ -55,6 +55,8 @@ while (length(l) == 1) {
     l <- readLines(conn, 1)
     i <- i + 1
 }
+legend(min(x)-3, max(y)+3, legendLabels, col=colors,
+       lty=c(1,1), lwd=c(5, 5), cex=2, bty='n')
 text(x, y, labels=0:(length(x)-1), pos=2, cex=2)
 close(conn)
 dev.off()
