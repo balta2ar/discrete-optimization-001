@@ -12,6 +12,7 @@ import "os"
 
 const (
     MAX_SECONDS_BETWEEN_CHANGES = 120
+    OVERPACKING_COEFF = 1.0
     // SA_MAX_ITERATIONS = 100
     // LS_MAX_TRIALS = 1000
 )
@@ -19,7 +20,7 @@ const (
 // functions which Go developers should have implemented but happened
 // to be too lazy and religious to do so
 
-func max(a int32, b int32) (r int32) {
+func max(a int, b int) (r int) {
     if a > b {
         return a
     } else {
@@ -31,9 +32,14 @@ func max(a int32, b int32) (r int32) {
 // Internal ADT
 //
 
+type Float float64
+const (
+    MaxFloat = math.MaxFloat64
+)
+
 type Client struct {
     Demand int
-    X, Y float32
+    X, Y Float
 }
 
 type Context struct {
@@ -42,7 +48,7 @@ type Context struct {
     C int // vehicle capacity
 
     Clients []Client
-    DistMatrix [][]float32
+    DistMatrix [][]Float
     // NearestToMatrix [][]int32
     // N int
 }
@@ -50,18 +56,20 @@ type Context struct {
 type CustomerMove struct {
     PathFrom, CustomerFrom int
     PathTo, CustomerTo int
-    NewCost float32
+    NewCost Float
+    NewOverCapacity int
     Feasible bool
 }
 
 type Path struct {
-    Cost float32
+    Cost Float
+    Demand int
     VertexOrder []int
 }
 
 type Solution struct {
-    Cost float32
-    OverCapacity float32
+    Cost Float
+    OverCapacity int
     Paths []Path
 }
 
@@ -70,14 +78,14 @@ type Solution struct {
 // calc and cache distances from each to each point
 // create triangle matrix to save space
 func (ctx Context) calcDistMatrix() Context {
-    ctx.DistMatrix = make([][]float32, ctx.N)
+    ctx.DistMatrix = make([][]Float, ctx.N)
     for i := 1; i < ctx.N; i++ {
         // ctx.DistMatrix[i] = make([]float64, ctx.N)
         // for j := 0; j < ctx.N; j++ {
         //     ctx.DistMatrix[i][j] = ctx.calcDist(i, j)
         // }
 
-        ctx.DistMatrix[i] = make([]float32, i)
+        ctx.DistMatrix[i] = make([]Float, i)
         for j := 0; j < i; j++ {
             ctx.DistMatrix[i][j] = ctx.calcDist(i, j)
         }
@@ -123,12 +131,12 @@ func (ctx Context) init() Context {
     return ctx
 }
 
-func (ctx Context) calcDist(i, j int) float32 {
-    return float32(math.Sqrt(math.Pow(float64(ctx.Clients[i].X - ctx.Clients[j].X), 2) +
+func (ctx Context) calcDist(i, j int) Float {
+    return Float(math.Sqrt(math.Pow(float64(ctx.Clients[i].X - ctx.Clients[j].X), 2) +
                              math.Pow(float64(ctx.Clients[i].Y - ctx.Clients[j].Y), 2)))
 }
 
-func (ctx Context) dist(i, j int) float32 {
+func (ctx Context) dist(i, j int) Float {
     // return ctx.DistMatrix[i][j]
 
     if i == j {
@@ -198,7 +206,9 @@ func (ctx Context) dist(i, j int) float32 {
 //     return nearest
 // }
 
-func printSolution(solution Solution) {
+func (ctx Context) printSolution(solution Solution) {
+    log.Println("OverCapacity incr", solution.OverCapacity, "calc", ctx.overCapacity(solution))
+    log.Println("Cost incr", solution.Cost, "calc", ctx.solutionCost(solution))
     fmt.Printf("%f %d\n", solution.Cost, 0)
     for i := 0; i < len(solution.Paths); i++ {
         for j := 0; j < len(solution.Paths[i].VertexOrder); j++ {
@@ -253,9 +263,11 @@ func (ctx Context) selectCustomerMove(solution Solution) CustomerMove {
         customerTo = rand.Int() % (len(vTo) - 1)
     }
 
-    move := CustomerMove{pathFrom, customerFrom, pathTo, customerTo, 0, false}
-    move.Feasible = ctx.isFeasibleMove(move, solution)
+    move := CustomerMove{pathFrom, customerFrom, pathTo, customerTo, 0, 0, false}
+    // move := CustomerMove{1, 2, 0, 1, 0, 0, false}
     move.NewCost = ctx.costAfterMove(move, solution)
+    move.NewOverCapacity = ctx.overCapacityAfterMove(move, solution)
+    move.Feasible = move.NewOverCapacity == 0 //ctx.isFeasibleMove(move, solution)
     //return CustomerMove{2, 1, 2, 2, 0, true}
     //return CustomerMove{2, 1, 1, 5, 0, true}
     return move
@@ -269,27 +281,29 @@ func (ctx Context) pathDemand(path Path) int {
     return demand
 }
 
-func (ctx Context) pathCost(path Path) float32 {
-    cost := float32(0)
+func (ctx Context) pathCost(path Path) Float {
+    cost := Float(0)
     for i := 0; i < len(path.VertexOrder) - 1; i++ {
         cost += ctx.dist(path.VertexOrder[i], path.VertexOrder[i+1])
     }
     return cost
 }
 
-func (ctx Context) overCapacity(solution Solution) float32 {
-    over := float32(0)
-    for _, path := range solution.Paths {
-        demandDiff := ctx.pathDemand(path) - ctx.C
-        if demandDiff > 0 {
-            over += float32(demandDiff)
-        }
+func (ctx Context) overCapacity(solution Solution) int {
+    over := 0
+    for i, path := range solution.Paths {
+        current := max(0, ctx.pathDemand(path) - ctx.C)
+        over += current
+        log.Println("overCapacity i", i, "demand incr", path.Demand,
+                    "calc", ctx.pathDemand(path),
+                    "current incr", max(0, path.Demand - ctx.C),
+                    "calc", current, "over", over)
     }
     return over
 }
 
-func (ctx Context) solutionCost(solution Solution) float32 {
-    cost := float32(0)
+func (ctx Context) solutionCost(solution Solution) Float {
+    cost := Float(0)
     for i := 0; i < len(solution.Paths); i++ {
         cost += ctx.pathCost(solution.Paths[i])
     }
@@ -326,7 +340,7 @@ func (ctx Context) isFeasibleSolution(solution Solution) bool {
     // return newDemand < ctx.C
 }
 
-func (ctx Context) costAfterMove(move CustomerMove, solution Solution) float32 {
+func (ctx Context) costAfterMove(move CustomerMove, solution Solution) Float {
     cost := solution.Cost
 
     // special cases
@@ -362,9 +376,79 @@ func (ctx Context) costAfterMove(move CustomerMove, solution Solution) float32 {
     return cost
 }
 
+func (ctx Context) printPathDemands(solution Solution) {
+    for i := 0; i < len(solution.Paths); i++ {
+        over := max(0, solution.Paths[i].Demand - ctx.C)
+        log.Println("path i", i, "demand", solution.Paths[i].Demand, "over", over)
+    }
+}
+
+// calc demands for From and To paths
+func (ctx Context) pathDemandsAfterMove(move CustomerMove, solution Solution) (int, int) {
+    pathFromDemand := solution.Paths[move.PathFrom].Demand
+    pathToDemand := solution.Paths[move.PathTo].Demand
+    if move.PathFrom == move.PathTo {
+        return pathFromDemand, pathToDemand
+    }
+    customerId := solution.Paths[move.PathFrom].VertexOrder[move.CustomerFrom]
+    customerDemand := ctx.Clients[customerId].Demand
+
+    from, to := pathFromDemand - customerDemand, pathToDemand + customerDemand
+    log.Println("pathDemandsAfterMove demand old", pathFromDemand, pathToDemand,
+                "customerId", customerId, "customerDemand", customerDemand,
+                "new", from, to)
+    return from, to
+}
+
+func (ctx Context) overCapacityAfterMove(move CustomerMove, solution Solution) int {
+    over := solution.OverCapacity
+    log.Println("overCapacityAfterMove start over", over, "C", ctx.C)
+
+    if move.PathFrom == move.PathTo {
+        log.Println("overCapacityAfterMove easy case, same path")
+        return over
+    }
+
+    ctx.printPathDemands(solution)
+
+    pathFromDemand := solution.Paths[move.PathFrom].Demand
+    pathToDemand := solution.Paths[move.PathTo].Demand
+    customerId := solution.Paths[move.PathFrom].VertexOrder[move.CustomerFrom]
+    customerDemand := ctx.Clients[customerId].Demand
+    log.Println("overCapacityAfterMove pathFromDemand", pathFromDemand,
+                "pathToDemand", pathToDemand, "customerId", customerId,
+                "customerDemand", customerDemand)
+
+    oldOverFrom := max(0, pathFromDemand - ctx.C)
+    newOverFrom := max(0, pathFromDemand - customerDemand - ctx.C)
+    oldOverTo := max(0, pathToDemand - ctx.C)
+    newOverTo := max(0, pathToDemand + customerDemand - ctx.C)
+    log.Println("overCapacityAfterMove oldOverFrom", oldOverFrom,
+                "newOverFrom", newOverFrom, "oldOverTo", oldOverTo,
+                "newOverTo", newOverTo)
+
+    over -= oldOverFrom
+    log.Println("overCapacityAfterMove -= oldOverFrom", oldOverFrom, "over", over)
+    over += newOverFrom
+    log.Println("overCapacityAfterMove += newOverFrom", newOverFrom, "over", over)
+    over -= oldOverTo
+    log.Println("overCapacityAfterMove -= oldOverTo", oldOverTo, "over", over)
+    over += newOverTo
+    log.Println("overCapacityAfterMove += newOverTo", newOverTo, "over", over)
+
+    ctx.printPathDemands(solution)
+
+    return over
+}
+
 func (ctx Context) applyMove(move CustomerMove,
                              origSolution Solution) Solution {
     solution := cloneSolution(origSolution)
+
+    from, to := ctx.pathDemandsAfterMove(move, solution)
+    solution.Paths[move.PathFrom].Demand = from
+    solution.Paths[move.PathTo].Demand = to
+    log.Println("applyMove", from, to)
 
     customerFromValue := solution.Paths[move.PathFrom].VertexOrder[move.CustomerFrom]
     // log.Println("customerFromValue", customerFromValue)
@@ -401,6 +485,7 @@ func (ctx Context) applyMove(move CustomerMove,
     // log.Println("new pathTo", pathTo)
 
     solution.Cost = move.NewCost
+    solution.OverCapacity = move.NewOverCapacity
     return solution
 }
 
@@ -515,23 +600,24 @@ func green(msg string) string { return color(msg, 32) }
 func red(msg string) string { return color(msg, 31) }
 
 // run local search with Metropolis meta-heuristic
-func (ctx Context) localSearch(solution Solution, temperature float64) Solution {
+func (ctx Context) localSearch(solution Solution, temperature float64, K int) Solution {
     // solution := cloneSolution(currentSolution)
     // log.Println("starting with solution cost", solution.Cost)
-    for k := 0; k < 100000; k++ {
+    for k := 0; k < K; k++ {
         //move := ctx.selectFeasibleMove(solution)
         move := ctx.selectCustomerMove(solution)
+        log.Println(move)
         predictedCost := move.NewCost
-        demandExcess := ctx.overCapacity(solution)
-        predictedCost += demandExcess
+        demandExcess := move.NewOverCapacity //ctx.overCapacity(solution)
+        predictedCost += OVERPACKING_COEFF * Float(demandExcess)
         costDiff := float64(predictedCost - solution.Cost)
 
         if predictedCost <= solution.Cost {
             // log.Println(costDiff, "=", predictedCost, "-", solution.Cost)
             // log.Println("taking predicted solution, costDiff", costDiff)
             solution = ctx.applyMove(move, solution)
-            calculatedCost := ctx.solutionCost(solution)
-            solution.Cost = calculatedCost
+            //calculatedCost := ctx.solutionCost(solution)
+            //solution.Cost = calculatedCost
             // log.Println("cost after accept", solution.Cost, "calculatedCost", calculatedCost)
         } else {
             probability := math.Exp(- costDiff / temperature)
@@ -541,12 +627,12 @@ func (ctx Context) localSearch(solution Solution, temperature float64) Solution 
                 // log.Println(costDiff, "=", predictedCost, "-", solution.Cost)
                 // log.Println("taking bad solution", costDiff, probability)
                 solution = ctx.applyMove(move, solution)
-                calculatedCost := ctx.solutionCost(solution)
-                if math.Abs(float64(solution.Cost - calculatedCost)) > 10.0 {
-                    log.Println("suspicious move", move)
-                    log.Println("cost after accept", solution.Cost, "calculatedCost", calculatedCost)
-                }
-                solution.Cost = calculatedCost
+                // calculatedCost := ctx.solutionCost(solution)
+                // if math.Abs(float64(solution.Cost - calculatedCost)) > 10.0 {
+                //     log.Println("suspicious move", move)
+                //     log.Println("cost after accept", solution.Cost, "calculatedCost", calculatedCost)
+                // }
+                // solution.Cost = calculatedCost
             }
         }
     }
@@ -556,24 +642,30 @@ func (ctx Context) localSearch(solution Solution, temperature float64) Solution 
 
 func (ctx Context) simulatedAnnealing() Solution {
     //solution := ctx.solveGreedyFrom(0)
-    // var solution Solution
-    // ptr := loadSolution("solution.greedy.best.bin")
-    // if ptr == nil {
-    //     //solution = ctx.solveGreedyRandom()
-    //     solution = ctx.solveGreedyBest()
-    //     saveSolution(&solution, "solution.greedy.best.bin")
-    // } else {
-    //     solution = *ptr
-    // }
+    var solution Solution
+    ptr := loadSolution("solution.bin")
+    if ptr == nil {
+        //solution = ctx.solveGreedyRandom()
+        // solution = ctx.solveGreedyBest()
+        solution = ctx.solveRandom()
+        saveSolution(&solution, "solution.bin")
+    } else {
+        solution = *ptr
+    }
 
     // solution = *loadSolution("solution.last.bin")
 
     // solution := ctx.solveGreedyBest()
-    solution := ctx.solveRandom()
+    // solution := ctx.solveRandom()
     // return solution
 
     bestSolution := solution
     t := 100.0
+    K := 100000
+
+    solution = ctx.localSearch(cloneSolution(solution), t, K)
+    return solution
+
     // 0.99991 -- 327K
     alpha := 0.9995
 
@@ -584,7 +676,7 @@ func (ctx Context) simulatedAnnealing() Solution {
         //     alpha = 0.999999
         // }
 
-        solution = ctx.localSearch(cloneSolution(solution), t)
+        solution = ctx.localSearch(cloneSolution(solution), t, K)
         feasible := ctx.isFeasibleSolution(solution)
         if (solution.Cost < bestSolution.Cost) && feasible {
         // if (solution.Cost < bestSolution.Cost) {
@@ -834,7 +926,7 @@ func initContextFromFile(filename string) Context {
 
     var N, V, C int
     var demand int
-    var x, y float32
+    var x, y Float
     fmt.Fscanf(file, "%d %d %d", &N, &V, &C)
 
     clients := []Client(make([]Client, N))
@@ -860,10 +952,12 @@ func createContext(filename string) Context {
     // ptr := loadContext("context.bin")
     // if ptr == nil {
     //     ctx = initContextFromFile(filename)
+    //     ctx = ctx.calcDistMatrix()
     //     saveContext(&ctx, "context.bin")
     // } else {
     //     ctx = *ptr
     // }
+
     return ctx
 }
 
@@ -871,7 +965,7 @@ func createContext(filename string) Context {
 
 func (ctx Context) nearestCustomer(v int, active []bool, capacityLeft int) int {
     bestCustomer := 0
-    bestDist := float32(0)
+    bestDist := Float(0)
     for i := 1; i < ctx.N; i++ {
         if !active[i] || capacityLeft < ctx.Clients[i].Demand {
             continue
@@ -888,6 +982,7 @@ func (ctx Context) nearestCustomer(v int, active []bool, capacityLeft int) int {
 func (path *Path) appendCustomer(ctx *Context, lastCustomer, customer int) {
     //lastCustomer := path.VertexOrder[len(path.VertexOrder)-1]
     path.Cost += ctx.dist(lastCustomer, customer)
+    path.Demand += ctx.Clients[customer].Demand
     path.VertexOrder = append(path.VertexOrder, customer)
 }
 
@@ -895,7 +990,7 @@ func (path *Path) appendCustomer(ctx *Context, lastCustomer, customer int) {
 // enumerate all the points to get the best greedy solution
 func (ctx Context) solveGreedyFrom(startingCustomer int) Solution {
     paths := []Path{}
-    totalCost := float32(0.0)
+    totalCost := Float(0.0)
     activeCustomers := make([]bool, ctx.N)
     numVisitedCustomers := 0
     localStartingCustomer := startingCustomer
@@ -906,13 +1001,13 @@ func (ctx Context) solveGreedyFrom(startingCustomer int) Solution {
     //log.Println(activeCustomers)
 
     // lastCustomer := startingCustomer
-    // path := Path{float32(0), []int{0}}
+    // path := Path{Float(0), []int{0}}
     // path.appendCustomer(&ctx, 0, lastCustomer)
     // capacityLeft := ctx.C - ctx.Clients[lastCustomer].Demand
 
     // fill route for each vehicle while capacity remains
     for v := 0; v < ctx.V; v++ {
-        path := Path{float32(0), []int{0}}
+        path := Path{Float(0), 0, []int{0}}
         capacityLeft := ctx.C
 
         for {
@@ -928,8 +1023,7 @@ func (ctx Context) solveGreedyFrom(startingCustomer int) Solution {
             nextCustomer := ctx.nearestCustomer(lastCustomer,
                                                 activeCustomers,
                                                 capacityLeft)
-            path.Cost += ctx.dist(lastCustomer, nextCustomer)
-            path.VertexOrder = append(path.VertexOrder, nextCustomer)
+            path.appendCustomer(&ctx, lastCustomer, nextCustomer)
             if nextCustomer == 0 { // warehouse returned => no customer can fit
                 break
             }
@@ -947,7 +1041,7 @@ func (ctx Context) solveGreedyFrom(startingCustomer int) Solution {
         log.Printf("Not all customers were visited: %d of %d (%d, %f)\n",
                     numVisitedCustomers, ctx.N-1, startingCustomer,
                     totalCost)
-        return Solution{math.MaxFloat32, 0, nil}
+        return Solution{MaxFloat, 0, nil}
     } else {
         // log.Printf("Solution: %f (%d)\n", totalCost, startingCustomer)
     }
@@ -958,23 +1052,22 @@ func (ctx Context) solveGreedyFrom(startingCustomer int) Solution {
 func (ctx Context) solveRandom() Solution {
     solution := Solution{0.0, 0, make([]Path, ctx.V)}
     for i := 0; i < ctx.V; i++ {
-        solution.Paths[i] = Path{float32(0), []int{0}}
+        solution.Paths[i] = Path{Float(0), 0, []int{0}}
     }
 
     for i := 0; i < ctx.N; i++ {
         // assign customer to random path
         path := rand.Int() % ctx.V
         last := solution.Paths[path].VertexOrder[len(solution.Paths[path].VertexOrder)-1]
-        solution.Paths[path].Cost += ctx.dist(last, i)
-        solution.Paths[path].VertexOrder = append(solution.Paths[path].VertexOrder, i)
+        solution.Paths[path].appendCustomer(&ctx, last, i)
     }
 
     // close path back to warehouse
     for i := 0; i < ctx.V; i++ {
         last := solution.Paths[i].VertexOrder[len(solution.Paths[i].VertexOrder)-1]
-        solution.Paths[i].Cost += ctx.dist(last, 0)
-        solution.Paths[i].VertexOrder = append(solution.Paths[i].VertexOrder, 0)
+        solution.Paths[i].appendCustomer(&ctx, last, 0)
         solution.Cost += solution.Paths[i].Cost
+        solution.OverCapacity += max(0, solution.Paths[i].Demand - ctx.C)
     }
 
     return solution
@@ -1005,7 +1098,7 @@ func solveFile(filename string, alg string) int {
     solution := ctx.simulatedAnnealing()
     // calcCost := ctx.solutionCost(solution)
     // log.Println("actual cost", solution.Cost, "calc cost", calcCost)
-    printSolution(solution)
+    ctx.printSolution(solution)
 
     // //log.Println(ctx)
     // // solution := ctx.solveGreedyFrom(12)
