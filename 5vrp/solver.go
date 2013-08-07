@@ -42,7 +42,7 @@ type Context struct {
     C int // vehicle capacity
 
     Clients []Client
-    // DistMatrix [][]float64
+    DistMatrix [][]float32
     // NearestToMatrix [][]int32
     // N int
 }
@@ -61,6 +61,7 @@ type Path struct {
 
 type Solution struct {
     Cost float32
+    OverCapacity float32
     Paths []Path
 }
 
@@ -68,21 +69,21 @@ type Solution struct {
 
 // calc and cache distances from each to each point
 // create triangle matrix to save space
-// func (ctx Context) calcDistMatrix() Context {
-//     ctx.DistMatrix = make([][]float64, ctx.N)
-//     for i := 1; i < ctx.N; i++ {
-//         // ctx.DistMatrix[i] = make([]float64, ctx.N)
-//         // for j := 0; j < ctx.N; j++ {
-//         //     ctx.DistMatrix[i][j] = ctx.calcDist(i, j)
-//         // }
-// 
-//         ctx.DistMatrix[i] = make([]float64, i)
-//         for j := 0; j < i; j++ {
-//             ctx.DistMatrix[i][j] = ctx.calcDist(i, j)
-//         }
-//     }
-//     return ctx
-// }
+func (ctx Context) calcDistMatrix() Context {
+    ctx.DistMatrix = make([][]float32, ctx.N)
+    for i := 1; i < ctx.N; i++ {
+        // ctx.DistMatrix[i] = make([]float64, ctx.N)
+        // for j := 0; j < ctx.N; j++ {
+        //     ctx.DistMatrix[i][j] = ctx.calcDist(i, j)
+        // }
+
+        ctx.DistMatrix[i] = make([]float32, i)
+        for j := 0; j < i; j++ {
+            ctx.DistMatrix[i][j] = ctx.calcDist(i, j)
+        }
+    }
+    return ctx
+}
 
 // used to sort indexs by distance to some point
 type IndexSorter struct {
@@ -137,9 +138,8 @@ func (ctx Context) dist(i, j int) float32 {
         i, j = j, i
     }
     //log.Println(i, j, "=>", i, j-i-1)
-    //return ctx.DistMatrix[i][j-i-1]
-    return ctx.calcDist(i, j)
-    //return ctx.DistMatrix[i][j]
+    // return ctx.calcDist(i, j)
+    return ctx.DistMatrix[i][j]
 }
 
 // func (ctx Context) nearestTo(j int) int {
@@ -354,10 +354,6 @@ func (ctx Context) costAfterMove(move CustomerMove, solution Solution) float32 {
     cToNext := solution.Paths[move.PathTo].VertexOrder[customerToNext]
     cToPrev := solution.Paths[move.PathTo].VertexOrder[customerTo]
 
-    // if move.PathFrom == move.PathTo {
-    //     
-    // }
-
     // add "to" customer
     cost -= ctx.dist(cToPrev, cToNext)
     cost += ctx.dist(cFrom, cToPrev)
@@ -519,8 +515,8 @@ func green(msg string) string { return color(msg, 32) }
 func red(msg string) string { return color(msg, 31) }
 
 // run local search with Metropolis meta-heuristic
-func (ctx Context) localSearch(currentSolution Solution, temperature float64) Solution {
-    solution := cloneSolution(currentSolution)
+func (ctx Context) localSearch(solution Solution, temperature float64) Solution {
+    // solution := cloneSolution(currentSolution)
     // log.Println("starting with solution cost", solution.Cost)
     for k := 0; k < 100000; k++ {
         //move := ctx.selectFeasibleMove(solution)
@@ -588,7 +584,7 @@ func (ctx Context) simulatedAnnealing() Solution {
         //     alpha = 0.999999
         // }
 
-        solution = ctx.localSearch(solution, t)
+        solution = ctx.localSearch(cloneSolution(solution), t)
         feasible := ctx.isFeasibleSolution(solution)
         if (solution.Cost < bestSolution.Cost) && feasible {
         // if (solution.Cost < bestSolution.Cost) {
@@ -848,7 +844,7 @@ func initContextFromFile(filename string) Context {
         clients[i] = Client{demand, x, y}
     }
 
-    ctx := Context{N, V, C, clients}
+    ctx := Context{N, V, C, clients, nil}
     ctx = ctx.init()
     return ctx
 }
@@ -858,6 +854,8 @@ func createContext(filename string) Context {
     // return ctx
 
     ctx := initContextFromFile(filename)
+    ctx = ctx.calcDistMatrix()
+
     // var ctx Context
     // ptr := loadContext("context.bin")
     // if ptr == nil {
@@ -949,16 +947,16 @@ func (ctx Context) solveGreedyFrom(startingCustomer int) Solution {
         log.Printf("Not all customers were visited: %d of %d (%d, %f)\n",
                     numVisitedCustomers, ctx.N-1, startingCustomer,
                     totalCost)
-        return Solution{math.MaxFloat32, nil}
+        return Solution{math.MaxFloat32, 0, nil}
     } else {
         // log.Printf("Solution: %f (%d)\n", totalCost, startingCustomer)
     }
-    return Solution{totalCost, paths}
+    return Solution{totalCost, 0, paths}
 }
 
 // just random customer assignement
 func (ctx Context) solveRandom() Solution {
-    solution := Solution{0.0, make([]Path, ctx.V)}
+    solution := Solution{0.0, 0, make([]Path, ctx.V)}
     for i := 0; i < ctx.V; i++ {
         solution.Paths[i] = Path{float32(0), []int{0}}
     }
