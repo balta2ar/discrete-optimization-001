@@ -149,6 +149,38 @@ func (ctx Context) dist(i, j int) Float {
     return ctx.DistMatrix[i][j]
 }
 
+func (ctx Context) averageDist() float64 {
+    N := 0
+    D := 0.0
+
+    for i := 0; i < ctx.N; i++ {
+        for j := 0; j < ctx.N; j++ {
+            if i != j {
+                D += float64(ctx.dist(i, j))
+                N += 1
+            }
+        }
+    }
+
+    return D/float64(N)
+}
+
+func (ctx Context) averageDistInSolution(solution Solution) float64 {
+    N := 0
+    D := 0.0
+
+    for _, path := range solution.Paths {
+        for i, _ := range path.VertexOrder {
+            if i != len(path.VertexOrder)-1 {
+                D += float64(ctx.dist(path.VertexOrder[i], path.VertexOrder[i+1]))
+                N += 1
+            }
+        }
+    }
+
+    return D/float64(N)
+}
+
 // func (ctx Context) nearestTo(j int) int {
 //     for i := 0; i < ctx.N; i++ {
 //         // k is what i used to be before the optimization
@@ -659,27 +691,30 @@ func (ctx Context) simulatedAnnealing() Solution {
     // solution := ctx.solveGreedyBest()
     solution := ctx.solveRandom()
     // return solution
+    ctx.printSolution(solution)
 
     bestSolution := solution
-    t := 150.0
+    // t0 := ctx.averageDistInSolution(solution)
+    t0 := 150.0
     minT := 3.0
     K := 5000
     // 0.99991 -- 327K
     alpha := 0.99999
     penalty := 50.0
 
-    tStep := 1.0
-    oldT := t
+    tStep := 5.0
+    oldT := t0
 
-    log.Println("annealing params t", t, "K", K,
+    log.Println("annealing params t0", t0, "K", K,
                 "alpha", alpha, "penalty", penalty)
 
     // solution = ctx.localSearch(cloneSolution(solution), t, K, penalty)
     // return solution
 
 
-    log.Println("start solution, t", t, "cost", solution.Cost)
     //for k := 0; k < 200000; k++ {
+    t := t0
+    log.Println("start solution, t", t, "cost", solution.Cost)
     for t > minT {
         // if t < 40.0 {
         //     alpha = 0.999999
@@ -691,8 +726,8 @@ func (ctx Context) simulatedAnnealing() Solution {
         if (solution.Cost < bestSolution.Cost) && feasible {
         // if (solution.Cost < bestSolution.Cost) {
             diff := bestSolution.Cost - solution.Cost
-            msg := fmt.Sprintf("1 | new solution, t %f cost %f diff %f feasible %t",
-                               t, solution.Cost, diff, feasible)
+            msg := fmt.Sprintf("1 | new solution, t %f penalty %f cost %f diff %f feasible %t",
+                               t, penalty, solution.Cost, diff, feasible)
             if feasible {
                 msg = green(msg)
             } else {
@@ -706,7 +741,8 @@ func (ctx Context) simulatedAnnealing() Solution {
         t *= alpha
 
         if (oldT - t) > tStep {
-            log.Printf("t %f best cost %f\n", t, bestSolution.Cost)
+            log.Printf("t %f penalty %f best cost %f\n",
+                       t, penalty, bestSolution.Cost)
             oldT = t
         }
     }
