@@ -17,6 +17,7 @@
 
 
 #/usr/bin/time -v go run solver.go $1 $2 > sol
+cp $1 problem
 time go run solver.go $1 $2 > sol
 cat sol
 Rscript ./plotSolution.R $1 sol 1>&2

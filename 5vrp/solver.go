@@ -238,17 +238,35 @@ func (ctx Context) averageDistInSolution(solution Solution) float64 {
 // }
 
 func (ctx Context) printSolution(solution Solution) {
-    log.Println("OverCapacity incr", solution.OverCapacity, "calc", ctx.overCapacity(solution))
-    log.Println("Cost incr", solution.Cost, "calc", ctx.solutionCost(solution))
-    fmt.Printf("%f %d\n", solution.Cost, 0)
+    ctx.printSolutionToFile(solution, "stdout")
+}
+
+func (ctx Context) printSolutionToFile(solution Solution, filename string) {
+    var file *os.File
+    var err error
+
+    if filename == "stdout" {
+        file = os.Stdout
+    } else {
+        file, err = os.Create(filename)
+        if err != nil {
+            log.Println("Cannot open file", filename, err)
+            return
+        }
+        defer file.Close()
+    }
+
+    // log.Println("OverCapacity incr", solution.OverCapacity, "calc", ctx.overCapacity(solution))
+    // log.Println("Cost incr", solution.Cost, "calc", ctx.solutionCost(solution))
+    fmt.Fprintf(file, "%f %d\n", solution.Cost, 0)
     for i := 0; i < len(solution.Paths); i++ {
         for j := 0; j < len(solution.Paths[i].VertexOrder); j++ {
-            fmt.Printf("%d", solution.Paths[i].VertexOrder[j])
+            fmt.Fprintf(file, "%d", solution.Paths[i].VertexOrder[j])
             if j != len(solution.Paths[i].VertexOrder)-1 {
-                fmt.Printf(" ")
+                fmt.Fprintf(file, " ")
             }
         }
-        fmt.Printf("\n")
+        fmt.Fprintf(file, "\n")
     }
     //fmt.Printf("\n")
 }
@@ -690,16 +708,17 @@ func (ctx Context) simulatedAnnealing() Solution {
 
     // solution := ctx.solveGreedyBest()
     solution := ctx.solveRandom()
+    ctx.printSolutionToFile(solution, "current.sol")
     // return solution
-    ctx.printSolution(solution)
+    // ctx.printSolution(solution)
 
     bestSolution := solution
     // t0 := ctx.averageDistInSolution(solution)
     t0 := 150.0
-    minT := 3.0
-    K := 5000
+    minT := 0.5
+    K := 10000
     // 0.99991 -- 327K
-    alpha := 0.99999
+    alpha := 0.9999
     penalty := 50.0
 
     tStep := 5.0
@@ -716,18 +735,21 @@ func (ctx Context) simulatedAnnealing() Solution {
     t := t0
     log.Println("start solution, t", t, "cost", solution.Cost)
     for t > minT {
-        // if t < 40.0 {
-        //     alpha = 0.999999
+        // if t < 10.0 {
+        //     alpha = 0.99999
+        //     // K = 15000
         // }
+        penalty = t0 - t
 
         solution = ctx.localSearch(cloneSolution(solution), t, K, penalty)
         // feasible := ctx.isFeasibleSolution(solution)
         feasible := solution.OverCapacity == 0
         if (solution.Cost < bestSolution.Cost) && feasible {
+            ctx.printSolutionToFile(solution, "current.sol")
         // if (solution.Cost < bestSolution.Cost) {
             diff := bestSolution.Cost - solution.Cost
-            msg := fmt.Sprintf("1 | new solution, t %f penalty %f cost %f diff %f feasible %t",
-                               t, penalty, solution.Cost, diff, feasible)
+            msg := fmt.Sprintf("t %f penalty %f cost %f diff %f",
+                               t, penalty, solution.Cost, diff)
             if feasible {
                 msg = green(msg)
             } else {
@@ -737,11 +759,12 @@ func (ctx Context) simulatedAnnealing() Solution {
             bestSolution = solution
 
             //saveSolution(&solution, "solution.current.bin")
+            oldT = t
         }
         t *= alpha
 
         if (oldT - t) > tStep {
-            log.Printf("t %f penalty %f best cost %f\n",
+            log.Printf("t %f penalty %f cost %f\n",
                        t, penalty, bestSolution.Cost)
             oldT = t
         }

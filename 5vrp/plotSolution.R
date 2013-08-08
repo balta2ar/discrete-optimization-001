@@ -40,6 +40,7 @@ lshift <- function(x) c(x[2:length(x)], x[1])
 i <- 1
 conn <- file(solution, 'r')
 l <- readLines(conn, 1)
+obj <- as.double(read.table(textConnection(l))[1])
 l <- readLines(conn, 1)
 while (length(l) == 1) {
     o <- as.integer(read.table(textConnection(l))[1,]) + 1
@@ -58,6 +59,7 @@ while (length(l) == 1) {
 legend(min(x)-3, max(y)+3, legendLabels, col=colors,
        lty=c(1,1), lwd=c(5, 5), cex=2, bty='n')
 text(x, y, labels=0:(length(x)-1), pos=2, cex=2)
+text(max(x), min(y), obj, cex=2.5, pos=2)
 close(conn)
 dev.off()
 
