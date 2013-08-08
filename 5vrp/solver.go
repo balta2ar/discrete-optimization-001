@@ -12,7 +12,6 @@ import "os"
 
 const (
     MAX_SECONDS_BETWEEN_CHANGES = 120
-    OVERPACKING_COEFF = 1.0
     // SA_MAX_ITERATIONS = 100
     // LS_MAX_TRIALS = 1000
 )
@@ -291,13 +290,13 @@ func (ctx Context) pathCost(path Path) Float {
 
 func (ctx Context) overCapacity(solution Solution) int {
     over := 0
-    for i, path := range solution.Paths {
+    for _, path := range solution.Paths {
         current := max(0, ctx.pathDemand(path) - ctx.C)
         over += current
-        log.Println("overCapacity i", i, "demand incr", path.Demand,
-                    "calc", ctx.pathDemand(path),
-                    "current incr", max(0, path.Demand - ctx.C),
-                    "calc", current, "over", over)
+        // log.Println("overCapacity i", i, "demand incr", path.Demand,
+        //             "calc", ctx.pathDemand(path),
+        //             "current incr", max(0, path.Demand - ctx.C),
+        //             "calc", current, "over", over)
     }
     return over
 }
@@ -394,49 +393,49 @@ func (ctx Context) pathDemandsAfterMove(move CustomerMove, solution Solution) (i
     customerDemand := ctx.Clients[customerId].Demand
 
     from, to := pathFromDemand - customerDemand, pathToDemand + customerDemand
-    log.Println("pathDemandsAfterMove demand old", pathFromDemand, pathToDemand,
-                "customerId", customerId, "customerDemand", customerDemand,
-                "new", from, to)
+    // log.Println("pathDemandsAfterMove demand old", pathFromDemand, pathToDemand,
+    //             "customerId", customerId, "customerDemand", customerDemand,
+    //             "new", from, to)
     return from, to
 }
 
 func (ctx Context) overCapacityAfterMove(move CustomerMove, solution Solution) int {
     over := solution.OverCapacity
-    log.Println("overCapacityAfterMove start over", over, "C", ctx.C)
+    // log.Println("overCapacityAfterMove start over", over, "C", ctx.C)
 
     if move.PathFrom == move.PathTo {
-        log.Println("overCapacityAfterMove easy case, same path")
+        // log.Println("overCapacityAfterMove easy case, same path")
         return over
     }
 
-    ctx.printPathDemands(solution)
+    // ctx.printPathDemands(solution)
 
     pathFromDemand := solution.Paths[move.PathFrom].Demand
     pathToDemand := solution.Paths[move.PathTo].Demand
     customerId := solution.Paths[move.PathFrom].VertexOrder[move.CustomerFrom]
     customerDemand := ctx.Clients[customerId].Demand
-    log.Println("overCapacityAfterMove pathFromDemand", pathFromDemand,
-                "pathToDemand", pathToDemand, "customerId", customerId,
-                "customerDemand", customerDemand)
+    // log.Println("overCapacityAfterMove pathFromDemand", pathFromDemand,
+    //             "pathToDemand", pathToDemand, "customerId", customerId,
+    //             "customerDemand", customerDemand)
 
     oldOverFrom := max(0, pathFromDemand - ctx.C)
     newOverFrom := max(0, pathFromDemand - customerDemand - ctx.C)
     oldOverTo := max(0, pathToDemand - ctx.C)
     newOverTo := max(0, pathToDemand + customerDemand - ctx.C)
-    log.Println("overCapacityAfterMove oldOverFrom", oldOverFrom,
-                "newOverFrom", newOverFrom, "oldOverTo", oldOverTo,
-                "newOverTo", newOverTo)
+    // log.Println("overCapacityAfterMove oldOverFrom", oldOverFrom,
+    //             "newOverFrom", newOverFrom, "oldOverTo", oldOverTo,
+    //             "newOverTo", newOverTo)
 
     over -= oldOverFrom
-    log.Println("overCapacityAfterMove -= oldOverFrom", oldOverFrom, "over", over)
+    // log.Println("overCapacityAfterMove -= oldOverFrom", oldOverFrom, "over", over)
     over += newOverFrom
-    log.Println("overCapacityAfterMove += newOverFrom", newOverFrom, "over", over)
+    // log.Println("overCapacityAfterMove += newOverFrom", newOverFrom, "over", over)
     over -= oldOverTo
-    log.Println("overCapacityAfterMove -= oldOverTo", oldOverTo, "over", over)
+    // log.Println("overCapacityAfterMove -= oldOverTo", oldOverTo, "over", over)
     over += newOverTo
-    log.Println("overCapacityAfterMove += newOverTo", newOverTo, "over", over)
+    // log.Println("overCapacityAfterMove += newOverTo", newOverTo, "over", over)
 
-    ctx.printPathDemands(solution)
+    // ctx.printPathDemands(solution)
 
     return over
 }
@@ -448,7 +447,7 @@ func (ctx Context) applyMove(move CustomerMove,
     from, to := ctx.pathDemandsAfterMove(move, solution)
     solution.Paths[move.PathFrom].Demand = from
     solution.Paths[move.PathTo].Demand = to
-    log.Println("applyMove", from, to)
+    // log.Println("applyMove", from, to)
 
     customerFromValue := solution.Paths[move.PathFrom].VertexOrder[move.CustomerFrom]
     // log.Println("customerFromValue", customerFromValue)
@@ -600,16 +599,17 @@ func green(msg string) string { return color(msg, 32) }
 func red(msg string) string { return color(msg, 31) }
 
 // run local search with Metropolis meta-heuristic
-func (ctx Context) localSearch(solution Solution, temperature float64, K int) Solution {
+func (ctx Context) localSearch(solution Solution, temperature float64,
+                               K int, penalty float64) Solution {
     // solution := cloneSolution(currentSolution)
     // log.Println("starting with solution cost", solution.Cost)
     for k := 0; k < K; k++ {
         //move := ctx.selectFeasibleMove(solution)
         move := ctx.selectCustomerMove(solution)
-        log.Println(move)
+        // log.Println(move)
         predictedCost := move.NewCost
         demandExcess := move.NewOverCapacity //ctx.overCapacity(solution)
-        predictedCost += OVERPACKING_COEFF * Float(demandExcess)
+        predictedCost += Float(penalty * float64(demandExcess))
         costDiff := float64(predictedCost - solution.Cost)
 
         if predictedCost <= solution.Cost {
@@ -624,8 +624,9 @@ func (ctx Context) localSearch(solution Solution, temperature float64, K int) So
             //log.Println("prob", probability)
 
             if rand.Float64() < probability {
+                // log.Println(demandExcess, solution.Cost, move.NewCost, predictedCost, costDiff)
                 // log.Println(costDiff, "=", predictedCost, "-", solution.Cost)
-                // log.Println("taking bad solution", costDiff, probability)
+                // log.Println("taking bad solution", probability)
                 solution = ctx.applyMove(move, solution)
                 // calculatedCost := ctx.solutionCost(solution)
                 // if math.Abs(float64(solution.Cost - calculatedCost)) > 10.0 {
@@ -642,42 +643,51 @@ func (ctx Context) localSearch(solution Solution, temperature float64, K int) So
 
 func (ctx Context) simulatedAnnealing() Solution {
     //solution := ctx.solveGreedyFrom(0)
-    var solution Solution
-    ptr := loadSolution("solution.bin")
-    if ptr == nil {
-        //solution = ctx.solveGreedyRandom()
-        // solution = ctx.solveGreedyBest()
-        solution = ctx.solveRandom()
-        saveSolution(&solution, "solution.bin")
-    } else {
-        solution = *ptr
-    }
+    // var solution Solution
+    // ptr := loadSolution("solution.bin")
+    // if ptr == nil {
+    //     //solution = ctx.solveGreedyRandom()
+    //     // solution = ctx.solveGreedyBest()
+    //     solution = ctx.solveRandom()
+    //     saveSolution(&solution, "solution.bin")
+    // } else {
+    //     solution = *ptr
+    // }
 
     // solution = *loadSolution("solution.last.bin")
 
     // solution := ctx.solveGreedyBest()
-    // solution := ctx.solveRandom()
+    solution := ctx.solveRandom()
     // return solution
 
     bestSolution := solution
-    t := 100.0
-    K := 100000
-
-    solution = ctx.localSearch(cloneSolution(solution), t, K)
-    return solution
-
+    t := 150.0
+    minT := 3.0
+    K := 5000
     // 0.99991 -- 327K
-    alpha := 0.9995
+    alpha := 0.99999
+    penalty := 50.0
+
+    tStep := 1.0
+    oldT := t
+
+    log.Println("annealing params t", t, "K", K,
+                "alpha", alpha, "penalty", penalty)
+
+    // solution = ctx.localSearch(cloneSolution(solution), t, K, penalty)
+    // return solution
+
 
     log.Println("start solution, t", t, "cost", solution.Cost)
     //for k := 0; k < 200000; k++ {
-    for t > 3.0 {
+    for t > minT {
         // if t < 40.0 {
         //     alpha = 0.999999
         // }
 
-        solution = ctx.localSearch(cloneSolution(solution), t, K)
-        feasible := ctx.isFeasibleSolution(solution)
+        solution = ctx.localSearch(cloneSolution(solution), t, K, penalty)
+        // feasible := ctx.isFeasibleSolution(solution)
+        feasible := solution.OverCapacity == 0
         if (solution.Cost < bestSolution.Cost) && feasible {
         // if (solution.Cost < bestSolution.Cost) {
             diff := bestSolution.Cost - solution.Cost
@@ -694,7 +704,11 @@ func (ctx Context) simulatedAnnealing() Solution {
             //saveSolution(&solution, "solution.current.bin")
         }
         t *= alpha
-        log.Printf("t %f best cost %f\n", t, bestSolution.Cost)
+
+        if (oldT - t) > tStep {
+            log.Printf("t %f best cost %f\n", t, bestSolution.Cost)
+            oldT = t
+        }
     }
     log.Println("last solution, t", t, "cost", bestSolution.Cost)
 

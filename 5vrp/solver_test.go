@@ -2,7 +2,7 @@ package main
 
 import "testing"
 import "math"
-import "log"
+// import "log"
 
 func BenchmarkLocalSearch(b *testing.B) {
     filename := "data/vrp_26_8_1"
@@ -12,7 +12,7 @@ func BenchmarkLocalSearch(b *testing.B) {
 
     b.ResetTimer()
     for i := 0; i < b.N; i++ {
-        ctx.localSearch(solution, temperature, 100000)
+        ctx.localSearch(solution, temperature, 100000, 1.0)
     }
 }
 
@@ -36,16 +36,16 @@ func TestOverCapacityAfterMove(b *testing.T) {
 
     for i := 0; i < 10000; i++ {
         move := ctx.selectCustomerMove(solution)
-        log.Println("new move i", i, move)
+        // log.Println("new move i", i, move)
         incrOverCapacity := move.NewOverCapacity
         solution = ctx.applyMove(move, solution)
         calcOverCapacity := ctx.overCapacity(solution)
-        ctx.printSolution(solution)
+        // ctx.printSolution(solution)
 
-        for j, path := range solution.Paths {
+        for _, path := range solution.Paths {
             incrDemand := path.Demand
             calcDemand := ctx.pathDemand(path)
-            log.Println("i", i, "j", j, "demand incr", incrDemand, "calc", calcDemand)
+            // log.Println("i", i, "j", j, "demand incr", incrDemand, "calc", calcDemand)
             if incrDemand != calcDemand {
                 b.FailNow()
             }
@@ -55,7 +55,7 @@ func TestOverCapacityAfterMove(b *testing.T) {
             b.Fatal("incrOverCapacity", incrOverCapacity,
                     "!= calcOverCapacity", calcOverCapacity, "i", i)
         }
-        log.Println("---")
+        // log.Println("---")
     }
 }
 
@@ -82,8 +82,8 @@ func TestLocalSearch(b *testing.T) {
     filename := "data/vrp_26_8_1"
     ctx := createContext(filename)
     solution := ctx.solveRandom()
-    lastSolution := ctx.localSearch(cloneSolution(solution), 100, 14)
-    ctx.printSolution(lastSolution)
+    lastSolution := ctx.localSearch(cloneSolution(solution), 100, 14, 1.0)
+    // ctx.printSolution(lastSolution)
 
     if math.Abs(float64(lastSolution.Cost - ctx.solutionCost(lastSolution))) > 0.1 {
         b.Fatal("incr Cost", lastSolution.Cost, "!= calc Cost", ctx.solutionCost(lastSolution))
