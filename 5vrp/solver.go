@@ -52,7 +52,22 @@ type Context struct {
     // N int
 }
 
+const (
+    // move customer from one route to another, (possibly the same route)
+    // CustomerFrom -- customer pos in PathFrom to extract
+    // CustomerTo -- customer after which to insert CustomerFrom to PathTo
+    MT_MOVE = iota
+    // swap two customers (possibly in the same route)
+    MT_SWAP
+    // reverse part of the same route
+    // (range including both CustomerFrom, CustomerTo)
+    MT_REVERSE
+    // max value for convenience (to use in rand)
+    MT_LAST
+)
+
 type CustomerMove struct {
+    MoveType int
     PathFrom, CustomerFrom int
     PathTo, CustomerTo int
     NewCost Float
@@ -277,17 +292,30 @@ func (ctx Context) printSolutionToFile(solution Solution, filename string) {
 //     }
 // }
 
-func (ctx Context) selectFeasibleMove(solution Solution) CustomerMove {
-    move := ctx.selectCustomerMove(solution)
-    for !ctx.isFeasibleMove(move, solution) {
-        move = ctx.selectCustomerMove(solution)
-    }
-    return move
+//func randomMoveType() int { return rand.Int() % MT_LAST }
+// func randomMoveType() int { return MT_SWAP }
+func randomMoveType() int { return rand.Int() % MT_REVERSE }
+
+// func (ctx Context) selectFeasibleMove(solution Solution) CustomerMove {
+//     move := ctx.selectCustomerMove(randomMoveType(), solution)
+//     for !ctx.isFeasibleMove(move, solution) {
+//         move = ctx.selectCustomerMove(randomMoveType(), solution)
+//     }
+//     return move
+// }
+
+func (ctx Context) selectRandomPoints(solution Solution,
+                                      pathFrom *int,
+                                      customerFrom *int,
+                                      pathTo *int,
+                                      customerTo *int) {
+    *pathFrom = rand.Int() % ctx.V
+    *pathTo = rand.Int() % ctx.V
+    *customerFrom = rand.Int() % len(solution.Paths[*pathFrom].VertexOrder)
+    *customerTo = rand.Int() % len(solution.Paths[*pathTo].VertexOrder)
 }
 
-// randomly select two customers
-// return: route1, customer1, route2, customer2
-func (ctx Context) selectCustomerMove(solution Solution) CustomerMove {
+func (ctx Context) selectMTMove(solution Solution) CustomerMove {
     pathFrom := rand.Int() % ctx.V
     for len(solution.Paths[pathFrom].VertexOrder) < 3 {
         pathFrom = rand.Int() % ctx.V
@@ -312,7 +340,48 @@ func (ctx Context) selectCustomerMove(solution Solution) CustomerMove {
         customerTo = rand.Int() % (len(vTo) - 1)
     }
 
-    move := CustomerMove{pathFrom, customerFrom, pathTo, customerTo, 0, 0, false}
+    return CustomerMove{MT_MOVE, pathFrom, customerFrom, pathTo, customerTo, 0, 0, false}
+}
+
+func (ctx Context) selectMTSwap(solution Solution) CustomerMove {
+    pathFrom, pathTo, customerFrom, customerTo := 0, 0, 0, 0
+    for {
+        ctx.selectRandomPoints(solution, &pathFrom, &customerFrom, &pathTo, &customerTo)
+        lenFrom := len(solution.Paths[pathFrom].VertexOrder)
+        lenTo := len(solution.Paths[pathTo].VertexOrder)
+        if ((pathFrom == pathTo) && (customerFrom == customerTo)) ||
+            (customerFrom == 0) ||
+            (customerFrom == lenFrom-1) ||
+            (customerTo == 0) ||
+            (customerTo == lenTo-1) {
+            continue
+        }
+        break
+    }
+
+    return CustomerMove{MT_SWAP, pathFrom, customerFrom, pathTo, customerTo, 0, 0, false}
+}
+
+func (ctx Context) selectMTReverse(solution Solution) CustomerMove {
+    return CustomerMove{MT_REVERSE, 0, 0, 0, 0, 0, 0, false}
+}
+
+// randomly select two customers
+// return: route1, customer1, route2, customer2
+func (ctx Context) selectCustomerMove(moveType int, solution Solution) CustomerMove {
+    var move CustomerMove
+    switch moveType {
+    case MT_MOVE:
+        move = ctx.selectMTMove(solution)
+    case MT_SWAP:
+        move = ctx.selectMTSwap(solution)
+    case MT_REVERSE:
+        move = ctx.selectMTReverse(solution)
+    default:
+        panic(fmt.Sprintf("Unknown move type %v", moveType))
+    }
+
+    // move := CustomerMove{moveType, pathFrom, customerFrom, pathTo, customerTo, 0, 0, false}
     // move := CustomerMove{1, 2, 0, 1, 0, 0, false}
     move.NewCost = ctx.costAfterMove(move, solution)
     move.NewOverCapacity = ctx.overCapacityAfterMove(move, solution)
@@ -359,16 +428,16 @@ func (ctx Context) solutionCost(solution Solution) Float {
     return cost
 }
 
-func (ctx Context) isFeasibleMove(move CustomerMove, solution Solution) bool {
-    if move.PathFrom == move.PathTo {
-        return true
-    }
-    path := solution.Paths[move.PathTo]
-    newDemand := ctx.pathDemand(path)
-    newDemand += ctx.Clients[path.VertexOrder[move.CustomerTo]].Demand
-    // log.Println("newDemand", newDemand, "C", ctx.C)
-    return newDemand <= ctx.C
-}
+// func (ctx Context) isFeasibleMove(move CustomerMove, solution Solution) bool {
+//     if move.PathFrom == move.PathTo {
+//         return true
+//     }
+//     path := solution.Paths[move.PathTo]
+//     newDemand := ctx.pathDemand(path)
+//     newDemand += ctx.Clients[path.VertexOrder[move.CustomerTo]].Demand
+//     // log.Println("newDemand", newDemand, "C", ctx.C)
+//     return newDemand <= ctx.C
+// }
 
 func (ctx Context) isFeasibleSolution(solution Solution) bool {
     for _, path := range solution.Paths {
@@ -389,7 +458,7 @@ func (ctx Context) isFeasibleSolution(solution Solution) bool {
     // return newDemand < ctx.C
 }
 
-func (ctx Context) costAfterMove(move CustomerMove, solution Solution) Float {
+func (ctx Context) costAfterMTMove(move CustomerMove, solution Solution) Float {
     cost := solution.Cost
 
     // special cases
@@ -425,6 +494,62 @@ func (ctx Context) costAfterMove(move CustomerMove, solution Solution) Float {
     return cost
 }
 
+func (ctx Context) costAfterMTSwap(move CustomerMove, solution Solution) Float {
+    cost := solution.Cost
+
+    cFrom := solution.Paths[move.PathFrom].VertexOrder[move.CustomerFrom]
+    cFromPrev := solution.Paths[move.PathFrom].VertexOrder[move.CustomerFrom-1]
+    cFromNext := solution.Paths[move.PathFrom].VertexOrder[move.CustomerFrom+1]
+
+    cTo := solution.Paths[move.PathTo].VertexOrder[move.CustomerTo]
+    cToPrev := solution.Paths[move.PathTo].VertexOrder[move.CustomerTo-1]
+    cToNext := solution.Paths[move.PathTo].VertexOrder[move.CustomerTo+1]
+
+    cost -= ctx.dist(cFromPrev, cFrom)
+    cost -= ctx.dist(cFrom, cFromNext)
+    cost -= ctx.dist(cToPrev, cTo)
+    cost -= ctx.dist(cTo, cToNext)
+
+    solution.Paths[move.PathFrom].VertexOrder[move.CustomerFrom],
+    solution.Paths[move.PathTo].VertexOrder[move.CustomerTo] =
+        solution.Paths[move.PathTo].VertexOrder[move.CustomerTo],
+        solution.Paths[move.PathFrom].VertexOrder[move.CustomerFrom]
+
+    cFromPrev = solution.Paths[move.PathFrom].VertexOrder[move.CustomerFrom-1]
+    cFromNext = solution.Paths[move.PathFrom].VertexOrder[move.CustomerFrom+1]
+    cToPrev = solution.Paths[move.PathTo].VertexOrder[move.CustomerTo-1]
+    cToNext = solution.Paths[move.PathTo].VertexOrder[move.CustomerTo+1]
+
+    cost += ctx.dist(cFromPrev, cTo)
+    cost += ctx.dist(cTo, cFromNext)
+    cost += ctx.dist(cToPrev, cFrom)
+    cost += ctx.dist(cFrom, cToNext)
+
+    solution.Paths[move.PathFrom].VertexOrder[move.CustomerFrom],
+    solution.Paths[move.PathTo].VertexOrder[move.CustomerTo] =
+        solution.Paths[move.PathTo].VertexOrder[move.CustomerTo],
+        solution.Paths[move.PathFrom].VertexOrder[move.CustomerFrom]
+
+    return cost
+}
+
+func (ctx Context) costAfterMTReverse(move CustomerMove, solution Solution) Float {
+    return 0
+}
+
+func (ctx Context) costAfterMove(move CustomerMove, solution Solution) Float {
+    switch move.MoveType {
+    case MT_MOVE:
+        return ctx.costAfterMTMove(move, solution)
+    case MT_SWAP:
+        return ctx.costAfterMTSwap(move, solution)
+    case MT_REVERSE:
+        return ctx.costAfterMTReverse(move, solution)
+    default:
+        panic(fmt.Sprintf("Unknown move type %v", move.MoveType))
+    }
+}
+
 func (ctx Context) printPathDemands(solution Solution) {
     for i := 0; i < len(solution.Paths); i++ {
         over := max(0, solution.Paths[i].Demand - ctx.C)
@@ -433,7 +558,7 @@ func (ctx Context) printPathDemands(solution Solution) {
 }
 
 // calc demands for From and To paths
-func (ctx Context) pathDemandsAfterMove(move CustomerMove, solution Solution) (int, int) {
+func (ctx Context) pathDemandsAfterMTMove(move CustomerMove, solution Solution) (int, int) {
     pathFromDemand := solution.Paths[move.PathFrom].Demand
     pathToDemand := solution.Paths[move.PathTo].Demand
     if move.PathFrom == move.PathTo {
@@ -443,58 +568,103 @@ func (ctx Context) pathDemandsAfterMove(move CustomerMove, solution Solution) (i
     customerDemand := ctx.Clients[customerId].Demand
 
     from, to := pathFromDemand - customerDemand, pathToDemand + customerDemand
-    // log.Println("pathDemandsAfterMove demand old", pathFromDemand, pathToDemand,
-    //             "customerId", customerId, "customerDemand", customerDemand,
-    //             "new", from, to)
     return from, to
 }
 
-func (ctx Context) overCapacityAfterMove(move CustomerMove, solution Solution) int {
+func (ctx Context) pathDemandsAfterMTSwap(move CustomerMove, solution Solution) (int, int) {
+    pathFromDemand := solution.Paths[move.PathFrom].Demand
+    pathToDemand := solution.Paths[move.PathTo].Demand
+    if move.PathFrom == move.PathTo {
+        return pathFromDemand, pathToDemand
+    }
+    customerFrom := solution.Paths[move.PathFrom].VertexOrder[move.CustomerFrom]
+    customerFromDemand := ctx.Clients[customerFrom].Demand
+    customerTo := solution.Paths[move.PathTo].VertexOrder[move.CustomerTo]
+    customerToDemand := ctx.Clients[customerTo].Demand
+
+    from := pathFromDemand - customerFromDemand + customerToDemand
+    to := pathToDemand - customerToDemand + customerFromDemand
+    return from, to
+}
+
+func (ctx Context) pathDemandsAfterMTReverse(move CustomerMove, solution Solution) (int, int) {
+    return 0, 0
+}
+
+func (ctx Context) overCapacityAfterMTMove(move CustomerMove, solution Solution) int {
     over := solution.OverCapacity
-    // log.Println("overCapacityAfterMove start over", over, "C", ctx.C)
 
     if move.PathFrom == move.PathTo {
-        // log.Println("overCapacityAfterMove easy case, same path")
         return over
     }
-
-    // ctx.printPathDemands(solution)
 
     pathFromDemand := solution.Paths[move.PathFrom].Demand
     pathToDemand := solution.Paths[move.PathTo].Demand
     customerId := solution.Paths[move.PathFrom].VertexOrder[move.CustomerFrom]
     customerDemand := ctx.Clients[customerId].Demand
-    // log.Println("overCapacityAfterMove pathFromDemand", pathFromDemand,
-    //             "pathToDemand", pathToDemand, "customerId", customerId,
-    //             "customerDemand", customerDemand)
 
     oldOverFrom := max(0, pathFromDemand - ctx.C)
     newOverFrom := max(0, pathFromDemand - customerDemand - ctx.C)
     oldOverTo := max(0, pathToDemand - ctx.C)
     newOverTo := max(0, pathToDemand + customerDemand - ctx.C)
-    // log.Println("overCapacityAfterMove oldOverFrom", oldOverFrom,
-    //             "newOverFrom", newOverFrom, "oldOverTo", oldOverTo,
-    //             "newOverTo", newOverTo)
 
     over -= oldOverFrom
-    // log.Println("overCapacityAfterMove -= oldOverFrom", oldOverFrom, "over", over)
     over += newOverFrom
-    // log.Println("overCapacityAfterMove += newOverFrom", newOverFrom, "over", over)
     over -= oldOverTo
-    // log.Println("overCapacityAfterMove -= oldOverTo", oldOverTo, "over", over)
     over += newOverTo
-    // log.Println("overCapacityAfterMove += newOverTo", newOverTo, "over", over)
-
-    // ctx.printPathDemands(solution)
 
     return over
 }
 
-func (ctx Context) applyMove(move CustomerMove,
-                             origSolution Solution) Solution {
+func (ctx Context) overCapacityAfterMTSwap(move CustomerMove, solution Solution) int {
+    over := solution.OverCapacity
+
+    if move.PathFrom == move.PathTo {
+        return over
+    }
+
+    pathFromDemand := solution.Paths[move.PathFrom].Demand
+    pathToDemand := solution.Paths[move.PathTo].Demand
+    customerFrom := solution.Paths[move.PathFrom].VertexOrder[move.CustomerFrom]
+    customerTo := solution.Paths[move.PathTo].VertexOrder[move.CustomerTo]
+    customerFromDemand := ctx.Clients[customerFrom].Demand
+    customerToDemand := ctx.Clients[customerTo].Demand
+
+    oldOverFrom := max(0, pathFromDemand - ctx.C)
+    newOverFrom := max(0, pathFromDemand - customerFromDemand + customerToDemand - ctx.C)
+    oldOverTo := max(0, pathToDemand - ctx.C)
+    newOverTo := max(0, pathToDemand - customerToDemand + customerFromDemand - ctx.C)
+
+    over -= oldOverFrom
+    over += newOverFrom
+    over -= oldOverTo
+    over += newOverTo
+
+    return over
+}
+
+func (ctx Context) overCapacityAfterMTReverse(move CustomerMove, solution Solution) int {
+    return 0
+}
+
+func (ctx Context) overCapacityAfterMove(move CustomerMove, solution Solution) int {
+    switch move.MoveType {
+    case MT_MOVE:
+        return ctx.overCapacityAfterMTMove(move, solution)
+    case MT_SWAP:
+        return ctx.overCapacityAfterMTSwap(move, solution)
+    case MT_REVERSE:
+        return ctx.overCapacityAfterMTReverse(move, solution)
+    default:
+        panic(fmt.Sprintf("Unknown move type %v", move.MoveType))
+    }
+}
+
+func (ctx Context) applyMTMove(move CustomerMove,
+                               origSolution Solution) Solution {
     solution := cloneSolution(origSolution)
 
-    from, to := ctx.pathDemandsAfterMove(move, solution)
+    from, to := ctx.pathDemandsAfterMTMove(move, solution)
     solution.Paths[move.PathFrom].Demand = from
     solution.Paths[move.PathTo].Demand = to
     // log.Println("applyMove", from, to)
@@ -536,6 +706,43 @@ func (ctx Context) applyMove(move CustomerMove,
     solution.Cost = move.NewCost
     solution.OverCapacity = move.NewOverCapacity
     return solution
+}
+
+func (ctx Context) applyMTSwap(move CustomerMove,
+                               origSolution Solution) Solution {
+    solution := cloneSolution(origSolution)
+
+    from, to := ctx.pathDemandsAfterMTSwap(move, solution)
+    solution.Paths[move.PathFrom].Demand = from
+    solution.Paths[move.PathTo].Demand = to
+
+    solution.Paths[move.PathFrom].VertexOrder[move.CustomerFrom],
+    solution.Paths[move.PathTo].VertexOrder[move.CustomerTo] =
+        solution.Paths[move.PathTo].VertexOrder[move.CustomerTo],
+        solution.Paths[move.PathFrom].VertexOrder[move.CustomerFrom]
+
+    solution.Cost = move.NewCost
+    solution.OverCapacity = move.NewOverCapacity
+    return solution
+}
+
+func (ctx Context) applyMTReverse(move CustomerMove,
+                                  origSolution Solution) Solution {
+    return origSolution
+}
+
+func (ctx Context) applyMove(move CustomerMove,
+                             origSolution Solution) Solution {
+    switch move.MoveType {
+    case MT_MOVE:
+        return ctx.applyMTMove(move, origSolution)
+    case MT_SWAP:
+        return ctx.applyMTSwap(move, origSolution)
+    case MT_REVERSE:
+        return ctx.applyMTReverse(move, origSolution)
+    default:
+        panic(fmt.Sprintf("Unknown move type %v", move.MoveType))
+    }
 }
 
 func cloneSolution(solution Solution) Solution {
@@ -655,7 +862,7 @@ func (ctx Context) localSearch(solution Solution, temperature float64,
     // log.Println("starting with solution cost", solution.Cost)
     for k := 0; k < K; k++ {
         //move := ctx.selectFeasibleMove(solution)
-        move := ctx.selectCustomerMove(solution)
+        move := ctx.selectCustomerMove(randomMoveType(), solution)
         // log.Println(move)
         predictedCost := move.NewCost
         demandExcess := move.NewOverCapacity //ctx.overCapacity(solution)
@@ -663,8 +870,8 @@ func (ctx Context) localSearch(solution Solution, temperature float64,
         costDiff := float64(predictedCost - solution.Cost)
 
         if predictedCost <= solution.Cost {
-            // log.Println(costDiff, "=", predictedCost, "-", solution.Cost)
-            // log.Println("taking predicted solution, costDiff", costDiff)
+            log.Println(costDiff, "=", predictedCost, "-", solution.Cost)
+            log.Println("taking predicted solution, costDiff", costDiff)
             solution = ctx.applyMove(move, solution)
             //calculatedCost := ctx.solutionCost(solution)
             //solution.Cost = calculatedCost
@@ -714,8 +921,8 @@ func (ctx Context) simulatedAnnealing() Solution {
 
     bestSolution := solution
     // t0 := ctx.averageDistInSolution(solution)
-    t0 := 150.0
-    minT := 0.5
+    t0 := 200.0
+    minT := 1.0 //0.5
     K := 10000
     // 0.99991 -- 327K
     alpha := 0.9999
@@ -730,16 +937,30 @@ func (ctx Context) simulatedAnnealing() Solution {
     // solution = ctx.localSearch(cloneSolution(solution), t, K, penalty)
     // return solution
 
+    // reheat := 0
 
     //for k := 0; k < 200000; k++ {
     t := t0
     log.Println("start solution, t", t, "cost", solution.Cost)
     for t > minT {
-        // if t < 10.0 {
-        //     alpha = 0.99999
-        //     // K = 15000
+        // if (reheat == 0) && (t < 1.0) {
+        //     log.Println("reheat", reheat)
+        //     reheat = 1
+        //     t = 10.0
         // }
-        penalty = t0 - t
+
+        // if t < 30.0 {
+        //     alpha = 0.99995
+        //     K = 15000
+        //     //K = 10000 + int((6.0 - t) * 5000)
+        // }
+        // if t < 5.0 {
+        //     alpha = 0.99999
+        //     K = 20000
+        // }
+        // penalty = (1 + (t0 - t) / 5)
+        penalty = (1 + (t0 - t) * 10)
+        // K = 5000 + int(t0 - t) * 150
 
         solution = ctx.localSearch(cloneSolution(solution), t, K, penalty)
         // feasible := ctx.isFeasibleSolution(solution)
@@ -748,8 +969,8 @@ func (ctx Context) simulatedAnnealing() Solution {
             ctx.printSolutionToFile(solution, "current.sol")
         // if (solution.Cost < bestSolution.Cost) {
             diff := bestSolution.Cost - solution.Cost
-            msg := fmt.Sprintf("t %f penalty %f cost %f diff %f",
-                               t, penalty, solution.Cost, diff)
+            msg := fmt.Sprintf("t %f cost %f penalty %f K %v diff %f",
+                               t, solution.Cost, penalty, K, diff)
             if feasible {
                 msg = green(msg)
             } else {
@@ -764,8 +985,8 @@ func (ctx Context) simulatedAnnealing() Solution {
         t *= alpha
 
         if (oldT - t) > tStep {
-            log.Printf("t %f penalty %f cost %f\n",
-                       t, penalty, bestSolution.Cost)
+            log.Printf("t %f cost %f penalty %f K %v\n",
+                       t, bestSolution.Cost, penalty, K)
             oldT = t
         }
     }
@@ -1128,7 +1349,7 @@ func (ctx Context) solveRandom() Solution {
         solution.Paths[i] = Path{Float(0), 0, []int{0}}
     }
 
-    for i := 0; i < ctx.N; i++ {
+    for i := 1; i < ctx.N; i++ {
         // assign customer to random path
         path := rand.Int() % ctx.V
         last := solution.Paths[path].VertexOrder[len(solution.Paths[path].VertexOrder)-1]

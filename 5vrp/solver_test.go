@@ -2,6 +2,7 @@ package main
 
 import "testing"
 import "math"
+// import "math/rand"
 // import "log"
 
 func BenchmarkLocalSearch(b *testing.B) {
@@ -23,7 +24,7 @@ func BenchmarkSelectCustomerMove(b *testing.B) {
 
     b.ResetTimer()
     for i := 0; i < b.N; i++ {
-        ctx.selectCustomerMove(solution)
+        ctx.selectCustomerMove(randomMoveType(), solution)
     }
 }
 
@@ -35,7 +36,7 @@ func TestOverCapacityAfterMove(b *testing.T) {
     ctx.overCapacity(solution)
 
     for i := 0; i < 10000; i++ {
-        move := ctx.selectCustomerMove(solution)
+        move := ctx.selectCustomerMove(randomMoveType(), solution)
         // log.Println("new move i", i, move)
         incrOverCapacity := move.NewOverCapacity
         solution = ctx.applyMove(move, solution)
@@ -66,8 +67,8 @@ func TestCostAfterMove(b *testing.T) {
     // ctx.printSolution(solution)
 
     for i := 0; i < 100000; i++ {
-        move := ctx.selectCustomerMove(solution)
-        // log.Println(move)
+        move := ctx.selectCustomerMove(randomMoveType(), solution)
+        // log.Println("new move i", i, move)
         incrCost := move.NewCost
         solution = ctx.applyMove(move, solution)
         calcCost := ctx.solutionCost(solution)
