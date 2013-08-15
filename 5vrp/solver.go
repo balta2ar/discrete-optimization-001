@@ -925,7 +925,7 @@ func (ctx Context) simulatedAnnealing() Solution {
     minT := 1.0 //0.5
     K := 10000
     // 0.99991 -- 327K
-    alpha := 0.9999
+    alpha := 0.99999
     penalty := 50.0
 
     tStep := 5.0
@@ -959,7 +959,7 @@ func (ctx Context) simulatedAnnealing() Solution {
         //     K = 20000
         // }
         // penalty = (1 + (t0 - t) / 5)
-        penalty = (1 + (t0 - t) * 10)
+        penalty = (1 + (t0 - t) / 4)
         // K = 5000 + int(t0 - t) * 150
 
         solution = ctx.localSearch(cloneSolution(solution), t, K, penalty)
