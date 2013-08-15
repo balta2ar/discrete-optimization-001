@@ -192,6 +192,19 @@ def runSolver(infile, outfile):
     (stdout, stderr) = process.communicate()
 
 
+def plotAssignment(idx, coords, centroids, output):
+    V = max(idx) + 1
+    cmap = plt.cm.get_cmap('Dark2')
+    customerColors = [cmap(1.0 * idx[i] / V) for i in range(len(idx))]
+    centroidColors = [cmap(1.0 * i / V) for i in range(V)]
+    xy = coords
+
+    pylab.scatter(centroids[:,0], centroids[:,1], marker='o', s=500, linewidths=2, c='none')
+    pylab.scatter(centroids[:,0], centroids[:,1], marker='x', s=500, linewidths=2, c=centroidColors)
+    pylab.scatter(xy[:,0], xy[:,1], s=100, c=customerColors)
+    pylab.savefig(output)
+
+
 def solveIt(inputData):
     # Modify this code to run your optimization algorithm
 
@@ -220,24 +233,14 @@ def solveIt(inputData):
     print(centroids)
     print(list(idx))
     print(centroids[0][0])
-
-    V = vehicleCount
-    cmap = plt.cm.get_cmap('Dark2')
-    customerColors = [cmap(1.0 * idx[i] / V) for i in range(len(idx))]
-    centroidColors = [cmap(1.0 * i / V) for i in range(V)]
-    xy = coords
-
-    pylab.scatter(centroids[:,0],centroids[:,1], marker='o', s = 500, linewidths=2, c='none')
-    pylab.scatter(centroids[:,0],centroids[:,1], marker='x', s = 500, linewidths=2, c=centroidColors)
-    pylab.scatter(xy[:,0],xy[:,1], s=100, c=customerColors)
-    pylab.savefig(KMEANS_PIC)
+    plotAssignment(idx, coords, centroids, KMEANS_PIC)
 
     assignModel = AssignCustomersModel(centroids, vehicleCapacity, customers)
     assignModel.generatePip(ASSIGN_PIP)
     runSolver(ASSIGN_PIP, ASSIGN_SOL)
     assign = assignModel.parseSolution(ASSIGN_SOL)
     print(assign)
-
+    plotAssignment(assign, coords, centroids, ASSIGN_PIC)
 
     return ''
 
