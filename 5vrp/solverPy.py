@@ -1,18 +1,22 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
+import sys
 import math
 from subprocess import Popen, PIPE
 
 import pylab
 from numpy import array
 from scipy.cluster.vq import kmeans, vq
-import matplotlib.cm as cm
 import matplotlib.pyplot as plt
 
 
 def length(customer1, customer2):
     return math.sqrt((customer1[1] - customer2[1])**2 + (customer1[2] - customer2[2])**2)
+
+
+def perr(*args):
+    sys.stderr.write(' '.join(map(str, args)) + '\n')
 
 
 INDENT = '    '
@@ -22,6 +26,7 @@ ASSIGN_SOL = 'assign.sol'
 ASSIGN_PIC = 'assign.png'
 ORDER_PIP = 'order.pip'
 ORDER_SOL = 'order.sol'
+OPTIMIZE_PIC = 'optimize.png'
 
 
 class AssignCustomersModel(object):
@@ -30,6 +35,8 @@ class AssignCustomersModel(object):
     the generated centroids without violating any capacity constraints. The
     objective is the sum of the distances from the assigned centroid.
 
+    This model is very similiar to Warehouse Location Problem. Just a little
+    simplier.
 
     Constants:
         V -- # of vehicles
@@ -50,7 +57,7 @@ class AssignCustomersModel(object):
         sum(a_c_v)|v in V == 1 (forall c in C)
 
         // total assigned demand <= vehicle capacity
-        sum(d_c * a_c_v)|c = 1..C <= c_v (forall v in V)
+        sum(d_c * a_c_v)|c = 1..C <= VC
     '''
     def __init__(self, vehicles, capacity, customers):
         self.vehicles = vehicles
@@ -81,8 +88,10 @@ class AssignCustomersModel(object):
         #         return ''
 
         with open(outname, 'w') as f:
+            for line in self.__class__.__doc__.splitlines():
+                f.write('\ {0}\n'.format(line))
 
-            f.write('Minimize\n\n')
+            f.write('\nMinimize\n\n')
             f.write('    obj:\n')
             f.write('\\ 1. Total travel cost from client to assigned vehicle\n')
             for v in range(self.V):
@@ -134,7 +143,10 @@ class AssignCustomersModel(object):
         clientVehicle = self.initAssignments()
 
         with open(inname) as f:
-            f.readline() # skip 'solution found' message
+            first = f.readline() # skip 'solution found' message
+            if 'infeasible' in first:
+                # perr('Infeasible solution: SCIP refused to solve it')
+                return None
             value = float(f.readline()[len('objective value:'):].strip())
             while True:
                 line = f.readline()
@@ -152,39 +164,173 @@ class AssignCustomersModel(object):
 
         return clientVehicle
 
-        #pe('hello', clientWarehouse)
-        #pe('hello', pprint.pformat(probabilities))
-        #pe('hello', probabilities)
+    # def cost(self, c, w):
+    #     # setup cost + transportation cost
+    #     return self.warehouses[w][1] + self.customerCosts[c][w]
 
-    def cost(self, c, w):
-        # setup cost + transportation cost
-        return self.warehouses[w][1] + self.customerCosts[c][w]
+    # def calcObjectiveValue(self):
+    #     objValue = 0.0
+    #     warehouseUsed = [False] * self.N
+    #     for ci in range(self.M):
+    #         wi = self.clientAssignments[ci]
+    #         # client transportation cost
+    #         objValue += self.customerCosts[ci][wi]
+    #         if not warehouseUsed[wi]:
+    #             warehouseUsed[wi] = True
+    #             # warehouse setup cost
+    #             objValue += self.warehouses[wi][1]
+    #     return objValue
 
-    def calcObjectiveValue(self):
-        objValue = 0.0
-        warehouseUsed = [False] * self.N
-        for ci in range(self.M):
-            wi = self.clientAssignments[ci]
-            # client transportation cost
-            objValue += self.customerCosts[ci][wi]
-            if not warehouseUsed[wi]:
-                warehouseUsed[wi] = True
-                # warehouse setup cost
-                objValue += self.warehouses[wi][1]
-        return objValue
-
-    def formatSolution(self):
-        first = '{0} {1}'.format(self.objectiveValue, 0)
-        second = ' '.join(map(str, self.clientAssignments))
-        print(first)
-        print(second)
-        return '{0}\n{1}'.format(first, second)
+    # def formatSolution(self):
+    #     first = '{0} {1}'.format(self.objectiveValue, 0)
+    #     second = ' '.join(map(str, self.clientAssignments))
+    #     print(first)
+    #     print(second)
+    #     return '{0}\n{1}'.format(first, second)
 
 
 class OrderCustomersModel(object):
-    ''' Finally, I re-use my TSP MIP to optimize the order each of those
-    customers is visited for each centroid.  '''
-    pass
+    '''
+    Finally, I re-use my TSP MIP to optimize the order each of those
+    customers is visited for each centroid.
+
+    This model is a TSP MIP formulation.
+
+    Constants:
+        C -- # of clients / customers
+        t_i_j -- transportation cost from customer i to j
+
+    Variables:
+        a_i_j -- customer i is followed by j (there is i -> j edge assigned)
+        u_i -- helper variables for MTZ (see below)
+
+    Objective f:
+        // minimize 1. Total travel cost
+        min sum(t_i_j * a_i_j)
+
+    Subject to:
+        // There is only one incoming and one outgoing edge
+        sum(a_i_j)|i in C == 1 (forall j)
+        sum(a_i_j)|j in C == 1 (forall i)
+
+        // Miller-Tucker-Zemlin (MTZ) formulation for subtour elimination
+        u_0 == 0
+        1 <= u_i <= C - 1, (forall i != 0)
+        u_i - u_j + 1 <= C * (1 - a_i_j) (forall i != 0, j != 0)
+    '''
+    def __init__(self, customers):
+        self.customers = customers
+        self.C = len(customers)
+
+    def generatePip(self, outname):
+        # 10 cheapest warehouses for problem #6
+        # fixed = set([264, 109, 484, 462, 145, 482, 414, 401, 115, 95])
+        #fixed = set([95])
+        # lastFixed = sorted(list(fixed))[-1]
+
+        def dist(i, j):
+            ix, iy = self.customers[i][1], self.customers[i][2]
+            jx, jy = self.customers[j][1], self.customers[j][2]
+            dx, dy = ix - jx, iy - iy
+            return math.sqrt(dx * dx + dy * dy)
+
+        def ass(i, j):
+            return 'a_{0}_{1}'.format(i, j)
+
+        def u(i):
+            return 'u_{0}'.format(i)
+
+        # def wopen(w):
+        #     if w in fixed:
+        #         return 'o_{0}'.format(w)
+        #     else:
+        #         return ''
+
+        with open(outname, 'w') as f:
+            for line in self.__class__.__doc__.splitlines():
+                f.write('\ {0}\n'.format(line))
+
+            f.write('\nMinimize\n\n')
+            f.write('    obj:\n')
+            f.write('\\ 1. Total travel cost\n')
+            for i in range(self.C):
+                for j in range(self.C):
+                    plus = '' if (i == self.C-1) and (j == self.C-1) else ' +'
+                    f.write('{0}{1} {2}{3}\n'.format(INDENT, dist(i, j), ass(i, j), plus))
+                f.write('\n')
+
+            f.write('Subject to\n')
+            f.write('\\ 1. There is only one incoming and one outgoing edge\n')
+            f.write('\\ i.e. sum(a_i_j)|i in C == 1 (forall j)\n')
+            f.write('\\ i.e. sum(a_i_j)|j in C == 1 (forall i)\n')
+            for i in range(self.C):
+                for j in range(self.C):
+                    plus = ' +'
+                    f.write('{0}{1}{2}\n'.format(INDENT, ass(i, j), plus))
+                f.write('{0}0 == 1\n'.format(INDENT))
+                f.write('\n')
+
+                for j in range(self.C):
+                    plus = ' +'
+                    f.write('{0}{1}{2}\n'.format(INDENT, ass(j, i), plus))
+                f.write('{0}0 == 1\n'.format(INDENT))
+                f.write('\n')
+
+            f.write('\\ 2. Miller-Tucker-Zemlin (MTZ) formulation for subtour elimination\n')
+            f.write('\\ u_0 == 0\n')
+            f.write('\\ 1 <= u_i <= C - 1, (forall i != 0) (see Bounds)\n')
+            f.write('\\ u_i - u_j + 1 <= C * (1 - a_i_j) (forall i != 0, j != 0)\n')
+            f.write('{0}{1}\n\n'.format(INDENT, 'u_0 = 0'))
+            for i in range(1, self.C):
+                for j in range(1, self.C):
+                    f.write('{0}{1} - {2} + {3} {4} <= {5}\n'
+                            ''.format(INDENT, u(i), u(j), self.C - 1, ass(i, j), self.C - 2))
+                f.write('\n')
+
+            f.write('Bounds\n')
+            f.write('\\ 1 <= u_i <= C - 1, (forall i != 0)\n')
+            for i in range(1, self.C):
+                f.write('{0}1 <= {1} <= {2}\n'
+                        ''.format(INDENT, u(i), self.C - 1))
+            f.write('\n')
+
+            f.write('Binary\n')
+            f.write('\\ 1. Customer i is followed by j (there is i -> j edge assigned)\n')
+            for i in range(self.C):
+                for j in range(self.C):
+                    f.write('{0}{1}\n'.format(INDENT, ass(i, j)))
+                f.write('\n')
+
+            f.write('End\n')
+
+    def initAssignments(self):
+        return [0] * self.C
+
+    def parseSolution(self, inname):
+        value = 0.0
+        clientVehicle = self.initAssignments()
+
+        with open(inname) as f:
+            first = f.readline() # skip 'solution found' message
+            if 'infeasible' in first:
+                perr('Infeasible solution: SCIP refused to solve it')
+                return None
+            value = float(f.readline()[len('objective value:'):].strip())
+            while True:
+                line = f.readline()
+                if len(line) == 0:
+                    break
+                if not line.startswith('u_'): # helper variable prefix (order)
+                    continue
+                name, val, _ = line.strip().split()
+                _, i = name.split('_')
+                i, val = int(i), int(round(float(val)))
+                clientVehicle[i] = val
+
+        self.objectiveValue = value
+        self.clientAssignments = clientVehicle
+
+        return clientVehicle
 
 
 def runSolver(infile, outfile):
@@ -192,30 +338,109 @@ def runSolver(infile, outfile):
     (stdout, stderr) = process.communicate()
 
 
-def plotAssignment(idx, coords, centroids, output):
+def indices(x, xs):
+    return [i for i in range(len(xs)) if xs[i] == x]
+
+
+def plotAssignment(idx, coords, centroids, warehouseCoord, output):
     V = max(idx) + 1
     cmap = plt.cm.get_cmap('Dark2')
     customerColors = [cmap(1.0 * idx[i] / V) for i in range(len(idx))]
     centroidColors = [cmap(1.0 * i / V) for i in range(V)]
     xy = coords
 
+    pylab.scatter([warehouseCoord[0]], [warehouseCoord[1]])
     pylab.scatter(centroids[:,0], centroids[:,1], marker='o', s=500, linewidths=2, c='none')
     pylab.scatter(centroids[:,0], centroids[:,1], marker='x', s=500, linewidths=2, c=centroidColors)
     pylab.scatter(xy[:,0], xy[:,1], s=100, c=customerColors)
+
+    for cluster in range(V):
+        customerIndices = indices(cluster, idx)
+        clusterCustomersCoords = [warehouseCoord] + [list(coords[i]) for i in customerIndices]
+
+        N = len(clusterCustomersCoords)
+        for i in range(N):
+            j = (i+1) % N
+            x = clusterCustomersCoords[i][0]
+            y = clusterCustomersCoords[i][1]
+            dx = clusterCustomersCoords[j][0] - clusterCustomersCoords[i][0]
+            dy = clusterCustomersCoords[j][1] - clusterCustomersCoords[i][1]
+            pylab.arrow(x, y, dx, dy, color=centroidColors[cluster], fc="k",
+                        head_width=1.0, head_length=2.5, length_includes_head=True)
+
     pylab.savefig(output)
+    pylab.close()
 
 
-def solveIt(inputData):
-    # Modify this code to run your optimization algorithm
+def makedist(customers):
+    def dist(i, j):
+        ix, iy = customers[i][1], customers[i][2]
+        jx, jy = customers[j][1], customers[j][2]
+        dx, dy = ix - jx, iy - jy
+        return math.sqrt(dx * dx + dy * dy)
+    return dist
 
+
+def objectiveValue(customers, paths):
+    dist = makedist(customers)
+    result = 0.0
+    for path in paths:
+        # perr('obj value path {0}'.format(path))
+        for i in range(len(path) - 1):
+            result += dist(path[i], path[i + 1])
+    return result
+
+
+def validatePath(customers, path, vehicleCapacity):
+    demand = 0
+    for j, v in enumerate(path):
+        demand += customers[v][0]
+    perr('path {0}: demand {1} / {2}'.format(path, demand, vehicleCapacity))
+    return demand <= vehicleCapacity
+
+
+def validate(customers, paths, vehicleCapacity):
+    perr('obj', objectiveValue(customers, paths))
+    numErrors = 0
+    for i, path in enumerate(paths):
+        perr('validate path {0}'.format(path))
+        demand = 0
+        for j, v in enumerate(path):
+            demand += customers[v][0]
+        perr('path {0}: demand {1} / {2}'.format(i, demand, vehicleCapacity))
+        if demand > vehicleCapacity:
+            numErrors += 1
+
+    if numErrors == 0:
+        return True
+    perr('Invalid solution, {0} violations'.format(numErrors))
+    return False
+
+
+def solutionFromIndexes(idx, customers, V):
+    solution = []
+    for cluster in range(V):
+        path = [0] + [i + 1 for i in indices(cluster, idx)] + [0]
+        solution.append(path)
+    return solution
+
+
+def formatSolution(customers, solution):
+    obj = objectiveValue(customers, solution)
+    lines = [' '.join(map(str, order)) for order in solution]
+    return '''{0} 0
+{1}'''.format(obj, '\n'.join(lines))
+
+
+def makeSolver(inputData):
     # parse the input
     lines = inputData.split('\n')
 
     parts = lines[0].split()
     customerCount = int(parts[0])
-    vehicleCount = int(parts[1])
+    V = int(parts[1])
     vehicleCapacity = int(parts[2])
-    depotIndex = 0
+    # depotIndex = 0
 
     customers = []
     for i in range(1, customerCount + 1):
@@ -223,68 +448,163 @@ def solveIt(inputData):
         parts = line.split()
         customers.append((int(parts[0]), float(parts[1]), float(parts[2])))
 
-    # build a trivial solution
-    # assign customers to vehicles starting by the largest customer demands
+    def solver():
+        return solveThreeStepsMIP(customers, V, vehicleCapacity)
 
-    coords = array([[c[1], c[2]] for c in customers])
-    centroids, variance = kmeans(coords, vehicleCount)
+    return solver
+
+
+def solveThreeStepsMIP(customers, V, vehicleCapacity):
+    #
+    # Find clusters using kmeans
+    #
+
+    onlyCustomers = customers[1:]
+    coords = array([[c[1], c[2]] for c in onlyCustomers])
+    centroids, variance = kmeans(coords, V)
     idx, dist = vq(coords, centroids)
+    warehouseCoord = [customers[0][1], customers[0][2]]
 
-    print(centroids)
-    print(list(idx))
-    print(centroids[0][0])
-    plotAssignment(idx, coords, centroids, KMEANS_PIC)
+    perr()
+    perr('Running K-means')
+    perr('centroids', centroids)
+    perr('idx', list(idx))
+    plotAssignment(idx, coords, centroids, warehouseCoord, KMEANS_PIC)
+    perr('Validating solution from K-means')
+    solution = solutionFromIndexes(idx, customers, V)
+    validate(customers, solution, vehicleCapacity)
+    perr(formatSolution(customers, solution))
 
-    assignModel = AssignCustomersModel(centroids, vehicleCapacity, customers)
+    #
+    # Reassign customers so that capacity is not violated
+    #
+
+    perr()
+    perr('Running AssignCustomersModel')
+    assignModel = AssignCustomersModel(centroids, vehicleCapacity, onlyCustomers)
     assignModel.generatePip(ASSIGN_PIP)
     runSolver(ASSIGN_PIP, ASSIGN_SOL)
     assign = assignModel.parseSolution(ASSIGN_SOL)
-    print(assign)
-    plotAssignment(assign, coords, centroids, ASSIGN_PIC)
+    if assign is None:
+        # infeasible solution
+        return None, None
+    perr('assign', assign)
+    plotAssignment(assign, coords, centroids, warehouseCoord, ASSIGN_PIC)
+    perr('Validating solution from AssignCustomersModel')
+    solution = solutionFromIndexes(assign, customers, V)
+    validate(customers, solution, vehicleCapacity)
+    perr(formatSolution(customers, solution))
+
+    #
+    # Find best vehicle travel order
+    #
+
+    optimized = []
+    for cluster in range(V):
+        customerIndices = indices(cluster, assign)
+        clusterCustomers = [customers[0]] + [customers[i+1] for i in customerIndices]
+        perr()
+        perr('Solving for cluster {0}'.format(cluster))
+        perr('cluster, indices', cluster, customerIndices)
+        perr('clusterCustomers', clusterCustomers)
+        localCustomers = [customers[0]] + [customers[i+1] for i in customerIndices] + [customers[0]]
+        perr('localCustomers', localCustomers)
+        indexOrder = [0] + [i + 1 for i in customerIndices] + [0]
+        validatePath(customers, indexOrder, vehicleCapacity)
+        perr()
+
+        orderModel = OrderCustomersModel(clusterCustomers)
+        orderModel.generatePip(ORDER_PIP)
+        runSolver(ORDER_PIP, ORDER_SOL)
+        order = orderModel.parseSolution(ORDER_SOL)
+        perr('order', order)
+
+        localOrder = [i - 1 for i in order[1:]]
+        perr('localOrder', localOrder)
+        indexOrder = [0] + [customerIndices[i] + 1 for i in localOrder] + [0]
+        perr('indexOrder', indexOrder)
+
+        localCustomers = [customers[i] for i in indexOrder]
+        perr('localCustomers', localCustomers)
+        validatePath(customers, indexOrder, vehicleCapacity)
+
+        optimized.append(indexOrder)
+
+        # return ''
+
+        # for i in range(len(idx)):
+        #     if cluster == :
+        # perr('optimized', optimized)
+
+        # plotAssignment(assign, coords, centroids, warehouseCoord, OPTIMIZE_PIC)
+
+        # break
+
+    perr('optimized', optimized)
+    validate(customers, optimized, vehicleCapacity)
+    return objectiveValue(customers, optimized), formatSolution(customers, optimized)
 
     return ''
 
-    vehicleTours = []
+    # vehicleTours = []
 
-    customerIndexs = set(range(1, customerCount))  # start at 1 to remove depot index
+    # customerIndexs = set(range(1, customerCount))  # start at 1 to remove depot index
 
-    for v in range(0, vehicleCount):
-        # print "Start Vehicle: ",v
-        vehicleTours.append([])
-        capacityRemaining = vehicleCapacity
-        while sum([capacityRemaining >= customers[ci][0] for ci in customerIndexs]) > 0:
-            used = set()
-            order = sorted(customerIndexs, key=lambda ci: -customers[ci][0])
-            for ci in order:
-                if capacityRemaining >= customers[ci][0]:
-                    capacityRemaining -= customers[ci][0]
-                    vehicleTours[v].append(ci)
-                    # print '   add', ci, capacityRemaining
-                    used.add(ci)
-            customerIndexs -= used
+    # for v in range(0, vehicleCount):
+    #     # print "Start Vehicle: ",v
+    #     vehicleTours.append([])
+    #     capacityRemaining = vehicleCapacity
+    #     while sum([capacityRemaining >= customers[ci][0] for ci in customerIndexs]) > 0:
+    #         used = set()
+    #         order = sorted(customerIndexs, key=lambda ci: -customers[ci][0])
+    #         for ci in order:
+    #             if capacityRemaining >= customers[ci][0]:
+    #                 capacityRemaining -= customers[ci][0]
+    #                 vehicleTours[v].append(ci)
+    #                 # print '   add', ci, capacityRemaining
+    #                 used.add(ci)
+    #         customerIndexs -= used
 
-    # checks that the number of customers served is correct
-    assert sum([len(v) for v in vehicleTours]) == customerCount - 1
+    # # checks that the number of customers served is correct
+    # assert sum([len(v) for v in vehicleTours]) == customerCount - 1
 
-    # calculate the cost of the solution; for each vehicle the length of the route
-    obj = 0
-    for v in range(0, vehicleCount):
-        vehicleTour = vehicleTours[v]
-        if len(vehicleTour) > 0:
-            obj += length(customers[depotIndex],customers[vehicleTour[0]])
-            for i in range(0, len(vehicleTour) - 1):
-                obj += length(customers[vehicleTour[i]],customers[vehicleTour[i + 1]])
-            obj += length(customers[vehicleTour[-1]],customers[depotIndex])
+    # # calculate the cost of the solution; for each vehicle the length of the route
+    # obj = 0
+    # for v in range(0, vehicleCount):
+    #     vehicleTour = vehicleTours[v]
+    #     if len(vehicleTour) > 0:
+    #         obj += length(customers[depotIndex],customers[vehicleTour[0]])
+    #         for i in range(0, len(vehicleTour) - 1):
+    #             obj += length(customers[vehicleTour[i]],customers[vehicleTour[i + 1]])
+    #         obj += length(customers[vehicleTour[-1]],customers[depotIndex])
 
-    # prepare the solution in the specified output format
-    outputData = str(obj) + ' ' + str(0) + '\n'
-    for v in range(0, vehicleCount):
-        outputData += str(depotIndex) + ' ' + ' '.join(map(str,vehicleTours[v])) + ' ' + str(depotIndex) + '\n'
+    # # prepare the solution in the specified output format
+    # outputData = str(obj) + ' ' + str(0) + '\n'
+    # for v in range(0, vehicleCount):
+    #     outputData += str(depotIndex) + ' ' + ' '.join(map(str,vehicleTours[v])) + ' ' + str(depotIndex) + '\n'
 
-    return outputData
+    # return outputData
 
 
-import sys
+def solveBest(inputData, K=1):
+    bestSolution = None
+    bestCost = -1
+    solver = makeSolver(inputData)
+    for i in range(K):
+        cost, solution = solver()
+        if cost is None:
+            continue
+        if (bestSolution is None) or (cost < bestCost):
+            bestCost = cost
+            bestSolution = solution
+            open('current.sol', 'w').write(solution)
+            perr('New solution: {0}'.format(cost))
+    return bestSolution
+
+
+def solveIt(inputData):
+    return solveBest(inputData)
+
 
 if __name__ == '__main__':
     if len(sys.argv) > 1:
@@ -292,7 +612,7 @@ if __name__ == '__main__':
         inputDataFile = open(fileLocation, 'r')
         inputData = ''.join(inputDataFile.readlines())
         inputDataFile.close()
-        print 'Solving:', fileLocation
+        perr('Solving:', fileLocation)
         print solveIt(inputData)
     else:
         print 'This test requires an input file.  Please select one from the data directory. (i.e. python solver.py ./data/vrp_5_4_1)'
