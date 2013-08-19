@@ -1,0 +1,70 @@
+ This page describes the PIP-format - a file format for storing polynomially constraint mixed-integer programs. The syntax is a straight-forward extension of the usual file format for storing linear programs (LPs) and mixed-integer programs (MIPs). Products are written using "*" and powers using "^" (hence these characters are not allowed in variable names). See below for an example.
+Token Description
+
+
+<Program> = <Objective> ? <Constraints> ? <Bounds> ? <General> ? <Binary>? "End"
+
+<Objective> = "Maximize"|"Minimize" <Label>? <Polynomial>?
+
+<Label> = <Name>":"
+
+<Polynomial> = <Monomial>*
+
+<Monomial> = (<Number>|"+"|"-") (<Name>("^"<Integer>)?)*
+
+<Constraints> = "Subject to" ( <Label> ? <Polynomial> ("<="|"=="|"="|">=") <Number> )*
+
+<Bounds> = "Bounds" ( (("-inf"|<Number>) "<=")? <Name> (("<=") ("+inf"|"inf"|<Number>))? )*
+
+<General> = "General" <Name>*
+
+<Binary> = "Binary" <Name>*
+
+Additional Requirements
+
+    All tokens must be separated by white-spaces.
+    Names/labels can contain at most 255 characters.
+    Name/labels have to consist of the following characters: a-z, A-Z, 0-9, "!", "#", "$", "%", "&", ";", "?", "@", "_". They cannot start with a number.
+    The maximal length of a line is 65536.
+    Everything after a backslash "\" is ignored until the end of the current line. Empty lines are ignored.
+    Each constraint has to begin on a new line.
+    Objective, Constraints, Bounds, and integrality conditions can be distributed over several lines.
+    No brackets/parenthesis are allowed.
+    Lower or upper bounds can be skipped or replaced by -inf or inf.
+    Default value for the lower bounds of variables is 0 and inf for the upper bounds, except for binary variables for with the default values are 0 and 1, respectively.
+    Variables in monomials have to be separated by white-spaces or "*".
+    The program has to end with "End".
+
+Keywords
+
+The following are keywords:
+
+    Maximize/Max
+    Minimize/Min
+    Subject to/st/s.t.
+    Bounds
+    General
+    Binary
+    inf
+    End
+
+The keywords are case-insensitive.
+Example
+
+
+Maximize
+ obj: x1 * x2 + 2 x2
+Subject to
+ c1: -2 x1 + x2 x3 + 3 x4 <= -1
+ c2: 2 x1 +4 x4 == 30
+ c3: x2^3 == 2
+ c4: x4 = 1
+Bounds
+ -inf <= x1 <= 10
+ 2 <= x2
+ x3 <= 2
+Binary
+ x4
+End
+
+
