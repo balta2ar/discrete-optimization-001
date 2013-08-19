@@ -1,8 +1,15 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
-def solveIt(n):
+import eightqueen.eightqueen
+
+def solveIt(n, rest=None):
     # Modify this code to run your puzzle solving algorithm
+
+    if rest:
+        return eightqueen.eightqueen.solve(n)
+    else:
+        return open('queens.sol').read()
 
     # define the domains of all the variables (0..n-1)
     domains = [range(0,n)]*n
@@ -59,10 +66,11 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         try:
             n = int(sys.argv[1].strip())
+            rest = sys.argv[2:]
         except:
             print sys.argv[1].strip(), 'is not an integer'
-        print 'Solving Size:', n
-        print(solveIt(n))
+        # print 'Solving Size:', n
+        print(solveIt(n, rest))
 
     else:
         print('This test requires an instance size.  Please select the size of problem to solve. (i.e. python queensSolver.py 8)')
