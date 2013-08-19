@@ -7,7 +7,7 @@ from subprocess import Popen, PIPE
 
 def solveIt(inputData):
 
-    return open('sol').read().strip()
+    return open('6.sol').read().strip()
     # Writes the inputData to a temporay file
 
     tmpFileName = 'tmp.data'

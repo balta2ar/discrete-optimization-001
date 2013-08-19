@@ -1,9 +1,14 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
+import os
 import sys
 import math
 from subprocess import Popen, PIPE
+import itertools
+import random
+import datetime
+import pickle
 
 import pylab
 from numpy import array
@@ -16,7 +21,16 @@ def length(customer1, customer2):
 
 
 def perr(*args):
+    return
     sys.stderr.write(' '.join(map(str, args)) + '\n')
+
+
+def perr2(*args):
+    sys.stderr.write(' '.join(map(str, args)) + '\n')
+
+
+def perr2nonl(*args):
+    sys.stderr.write(' '.join(map(str, args)))
 
 
 INDENT = '    '
@@ -27,6 +41,8 @@ ASSIGN_PIC = 'assign.png'
 ORDER_PIP = 'order.pip'
 ORDER_SOL = 'order.sol'
 OPTIMIZE_PIC = 'optimize.png'
+KMEANS_SET_BIN = 'kmeans.set.bin'
+CLUSTER_SET_BIN = 'cluster.set.bin'
 
 
 class AssignCustomersModel(object):
@@ -213,10 +229,13 @@ class OrderCustomersModel(object):
         sum(a_i_j)|i in C == 1 (forall j)
         sum(a_i_j)|j in C == 1 (forall i)
 
-        // Miller-Tucker-Zemlin (MTZ) formulation for subtour elimination
-        u_0 == 0
-        1 <= u_i <= C - 1, (forall i != 0)
-        u_i - u_j + 1 <= C * (1 - a_i_j) (forall i != 0, j != 0)
+        # // Miller-Tucker-Zemlin (MTZ) formulation for subtour elimination
+        # u_0 == 0
+        # 1 <= u_i <= C - 1, (forall i != 0)
+        # u_i - u_j + 1 <= C * (1 - a_i_j) (forall i != 0, j != 0)
+
+        // Subtour formulation
+        sum(a_i_j)|i in S, j in S <= |S| - 1 (S is a subset of C, S != C, |S| > 1)
     '''
     def __init__(self, customers):
         self.customers = customers
@@ -231,8 +250,11 @@ class OrderCustomersModel(object):
         def dist(i, j):
             ix, iy = self.customers[i][1], self.customers[i][2]
             jx, jy = self.customers[j][1], self.customers[j][2]
-            dx, dy = ix - jx, iy - iy
-            return math.sqrt(dx * dx + dy * dy)
+            dx, dy = ix - jx, iy - jy
+            s = math.sqrt(dx * dx + dy * dy)
+            # perr('i j', i, j, 'ix iy', ix, iy, 'jx jy', jx, jy,
+            #      'dx dy', dx, dy, 's', s)
+            return s
 
         def ass(i, j):
             return 'a_{0}_{1}'.format(i, j)
@@ -276,22 +298,37 @@ class OrderCustomersModel(object):
                 f.write('{0}0 == 1\n'.format(INDENT))
                 f.write('\n')
 
-            f.write('\\ 2. Miller-Tucker-Zemlin (MTZ) formulation for subtour elimination\n')
-            f.write('\\ u_0 == 0\n')
-            f.write('\\ 1 <= u_i <= C - 1, (forall i != 0) (see Bounds)\n')
-            f.write('\\ u_i - u_j + 1 <= C * (1 - a_i_j) (forall i != 0, j != 0)\n')
-            f.write('{0}{1}\n\n'.format(INDENT, 'u_0 = 0'))
-            for i in range(1, self.C):
-                for j in range(1, self.C):
-                    f.write('{0}{1} - {2} + {3} {4} <= {5}\n'
-                            ''.format(INDENT, u(i), u(j), self.C - 1, ass(i, j), self.C - 2))
-                f.write('\n')
+            f.write('\\ 2. Subtour formulation\n')
+            f.write('\\ i.e. sum(a_i_j)|i in S, j in S <= |S| - 1 (S is a subset of C, S != C, |S| > 1)\n')
+            allIndices = list(range(self.C))
+            for tour in allSubtours(allIndices, 1, self.C / 2 + 1):
+                for u in tour:
+                    f.write('{0}'.format(INDENT))
+                    for v in tour:
+                        f.write('{0} + '.format(ass(u, v)))
+                    f.write('\n')
+                f.write('{0}0 <= {1}\n\n'.format(INDENT, len(tour) - 1))
+            f.write('\n')
+
+                    #plus = '' if i == len(tour) - 2
+            # print('N subtours', len(subtours))
+
+            # f.write('\\ 2. Miller-Tucker-Zemlin (MTZ) formulation for subtour elimination\n')
+            # f.write('\\ u_0 == 0\n')
+            # f.write('\\ 1 <= u_i <= C - 1, (forall i != 0) (see Bounds)\n')
+            # f.write('\\ u_i - u_j + 1 <= C * (1 - a_i_j) (forall i != 0, j != 0)\n')
+            # f.write('{0}{1}\n\n'.format(INDENT, 'u_0 = 0'))
+            # for i in range(1, self.C):
+            #     for j in range(1, self.C):
+            #         f.write('{0}{1} - {2} + {3} {4} <= {5}\n'
+            #                 ''.format(INDENT, u(i), u(j), self.C - 1, ass(i, j), self.C - 2))
+            #     f.write('\n')
 
             f.write('Bounds\n')
-            f.write('\\ 1 <= u_i <= C - 1, (forall i != 0)\n')
-            for i in range(1, self.C):
-                f.write('{0}1 <= {1} <= {2}\n'
-                        ''.format(INDENT, u(i), self.C - 1))
+            # f.write('\\ 1 <= u_i <= C - 1, (forall i != 0)\n')
+            # for i in range(1, self.C):
+            #     f.write('{0}1 <= {1} <= {2}\n'
+            #             ''.format(INDENT, u(i), self.C - 1))
             f.write('\n')
 
             f.write('Binary\n')
@@ -320,17 +357,27 @@ class OrderCustomersModel(object):
                 line = f.readline()
                 if len(line) == 0:
                     break
-                if not line.startswith('u_'): # helper variable prefix (order)
+                if not line.startswith('a_'):  # assign variable
                     continue
-                name, val, _ = line.strip().split()
-                _, i = name.split('_')
-                i, val = int(i), int(round(float(val)))
-                clientVehicle[i] = val
+                name, _, _ = line.strip().split()
+                _, i, j = name.split('_')
+                i, j = int(i), int(j)
+                clientVehicle[i] = j
+
+        current = 0
+        order = [0]
+        while True:
+            nxt = clientVehicle[current]
+            # perr('nxt', nxt)
+            if nxt == 0:
+                break
+            order.append(nxt)
+            current = nxt
 
         self.objectiveValue = value
-        self.clientAssignments = clientVehicle
+        self.clientAssignments = order
 
-        return clientVehicle
+        return order
 
 
 def runSolver(infile, outfile):
@@ -392,22 +439,32 @@ def objectiveValue(customers, paths):
 
 
 def validatePath(customers, path, vehicleCapacity):
-    demand = 0
+    dist = makedist(customers)
+    demand, cost = 0, 0.0
     for j, v in enumerate(path):
         demand += customers[v][0]
-    perr('path {0}: demand {1} / {2}'.format(path, demand, vehicleCapacity))
+    for i in range(len(path) - 1):
+        cost += dist(path[i], path[i + 1])
+    perr('path {0}: demand {1} / {2}, cost {3}'
+         ''.format(path, demand, vehicleCapacity, cost))
     return demand <= vehicleCapacity
 
 
 def validate(customers, paths, vehicleCapacity):
+    dist = makedist(customers)
     perr('obj', objectiveValue(customers, paths))
     numErrors = 0
     for i, path in enumerate(paths):
         perr('validate path {0}'.format(path))
-        demand = 0
+        demand, cost = 0, 0.0
         for j, v in enumerate(path):
             demand += customers[v][0]
-        perr('path {0}: demand {1} / {2}'.format(i, demand, vehicleCapacity))
+        for j in range(len(path) - 1):
+            # perr('cost {0}->{1} = {2}'
+            #      ''.format(path[j], path[j + 1], dist(path[j], path[j + 1])))
+            cost += dist(path[j], path[j + 1])
+        perr('path {0}: demand {1} / {2}, cost {3}'
+             ''.format(i, demand, vehicleCapacity, cost))
         if demand > vehicleCapacity:
             numErrors += 1
 
@@ -432,7 +489,7 @@ def formatSolution(customers, solution):
 {1}'''.format(obj, '\n'.join(lines))
 
 
-def makeSolver(inputData):
+def makeSolver(inputData, kmeansSet, clusterSet):
     # parse the input
     lines = inputData.split('\n')
 
@@ -449,21 +506,54 @@ def makeSolver(inputData):
         customers.append((int(parts[0]), float(parts[1]), float(parts[2])))
 
     def solver():
-        return solveThreeStepsMIP(customers, V, vehicleCapacity)
+        return solveThreeStepsMIP(customers, V, vehicleCapacity, kmeansSet, clusterSet)
 
     return solver
 
 
-def solveThreeStepsMIP(customers, V, vehicleCapacity):
+def allSubtours(items, a, b):
+    for r in range(a, b):
+        for tour in itertools.combinations(items, r):
+            yield list(tour)
+            # yield list(reversed(tour))
+
+
+def splitOnClusters(idx):
+    V = max(idx) + 1
+    result = []
+    for c in range(V):
+        result.append(tuple(sorted(indices(c, idx))))
+    return tuple(sorted(result))
+
+
+def solveThreeStepsMIP(customers, V, vehicleCapacity, kmeansSet, clusterSet):
     #
     # Find clusters using kmeans
     #
 
-    onlyCustomers = customers[1:]
-    coords = array([[c[1], c[2]] for c in onlyCustomers])
-    centroids, variance = kmeans(coords, V)
-    idx, dist = vq(coords, centroids)
-    warehouseCoord = [customers[0][1], customers[0][2]]
+    # perr2(len(kmeansSet))
+
+    i = 0
+    while True:
+        onlyCustomers = customers[1:]
+        coords = array([[c[1], c[2]] for c in onlyCustomers])
+        centroids, variance = kmeans(coords, V)
+        idx, dist = vq(coords, centroids)
+        warehouseCoord = [customers[0][1], customers[0][2]]
+
+        tupleidx = splitOnClusters(tuple(idx))
+        # perr2('>>>', splitOnClusters(tupleidx))
+        # perr2(tupleidx)
+        if tupleidx not in kmeansSet:
+            # perr2('Added tupleidx set {0}'.format(tupleidx))
+            kmeansSet.add(tupleidx)
+            break
+
+        #perr2('({0}) Idx set is present {1}'.format(i, tupleidx))
+        perr2nonl('\rK-means generation round {0} (set size {1})'
+                  ''.format(i, len(kmeansSet)))
+        i += 1
+    perr2nonl('\n')
 
     perr()
     perr('Running K-means')
@@ -495,6 +585,10 @@ def solveThreeStepsMIP(customers, V, vehicleCapacity):
     validate(customers, solution, vehicleCapacity)
     perr(formatSolution(customers, solution))
 
+    # tupleidx = splitOnClusters(tuple(idx))
+    # tupleassign = splitOnClusters(tuple(assign))
+    # perr2('>>>', tupleidx, '=>', tupleassign)
+
     #
     # Find best vehicle travel order
     #
@@ -502,33 +596,46 @@ def solveThreeStepsMIP(customers, V, vehicleCapacity):
     optimized = []
     for cluster in range(V):
         customerIndices = indices(cluster, assign)
-        clusterCustomers = [customers[0]] + [customers[i+1] for i in customerIndices]
-        perr()
-        perr('Solving for cluster {0}'.format(cluster))
-        perr('cluster, indices', cluster, customerIndices)
-        perr('clusterCustomers', clusterCustomers)
-        localCustomers = [customers[0]] + [customers[i+1] for i in customerIndices] + [customers[0]]
-        perr('localCustomers', localCustomers)
-        indexOrder = [0] + [i + 1 for i in customerIndices] + [0]
-        validatePath(customers, indexOrder, vehicleCapacity)
-        perr()
 
-        orderModel = OrderCustomersModel(clusterCustomers)
-        orderModel.generatePip(ORDER_PIP)
-        runSolver(ORDER_PIP, ORDER_SOL)
-        order = orderModel.parseSolution(ORDER_SOL)
-        perr('order', order)
+        tupleIndices = tuple(sorted(customerIndices))
+        if tupleIndices in clusterSet:
+            indexOrder = list(clusterSet[tupleIndices])
 
-        localOrder = [i - 1 for i in order[1:]]
-        perr('localOrder', localOrder)
-        indexOrder = [0] + [customerIndices[i] + 1 for i in localOrder] + [0]
-        perr('indexOrder', indexOrder)
+        else:
+            clusterCustomers = [customers[0]] + [customers[i+1] for i in customerIndices]
+            perr()
+            # perr2('Solving for cluster {0} / {1}'.format(cluster, V))
+            perr2nonl('\rCluster {0} / {1}'.format(cluster + 1, V))
+            perr('cluster, indices', cluster, customerIndices)
+            perr('clusterCustomers', clusterCustomers)
 
-        localCustomers = [customers[i] for i in indexOrder]
-        perr('localCustomers', localCustomers)
-        validatePath(customers, indexOrder, vehicleCapacity)
+            localCustomers = [customers[0]] + [customers[i+1] for i in customerIndices] + [customers[0]]
+            perr('localCustomers', localCustomers)
+            indexOrder = [0] + [i + 1 for i in customerIndices] + [0]
+            validatePath(customers, indexOrder, vehicleCapacity)
+            perr()
+
+            orderModel = OrderCustomersModel(clusterCustomers)
+            orderModel.generatePip(ORDER_PIP)
+            runSolver(ORDER_PIP, ORDER_SOL)
+            order = orderModel.parseSolution(ORDER_SOL)
+            perr('order', order)
+
+            # return ''
+
+            localOrder = [i - 1 for i in order[1:]]
+            perr('localOrder', localOrder)
+            indexOrder = [0] + [customerIndices[i] + 1 for i in localOrder] + [0]
+            perr('indexOrder', indexOrder)
+
+            localCustomers = [customers[i] for i in indexOrder]
+            perr('localCustomers', localCustomers)
+            validatePath(customers, indexOrder, vehicleCapacity)
+
+            clusterSet.add(tuple(indexOrder))
 
         optimized.append(indexOrder)
+        open('current.sol', 'w').write(formatSolution(customers, optimized))
 
         # return ''
 
@@ -539,6 +646,7 @@ def solveThreeStepsMIP(customers, V, vehicleCapacity):
         # plotAssignment(assign, coords, centroids, warehouseCoord, OPTIMIZE_PIC)
 
         # break
+    perr2nonl('\n')
 
     perr('optimized', optimized)
     validate(customers, optimized, vehicleCapacity)
@@ -586,11 +694,31 @@ def solveThreeStepsMIP(customers, V, vehicleCapacity):
     # return outputData
 
 
-def solveBest(inputData, K=1):
+def saveSet(s, filename):
+    pickle.dump(s, open(filename, 'w'))
+
+
+def loadSet(filename):
+    if os.path.exists(filename):
+        return pickle.load(open(filename))
+    return set()
+
+
+def solveBest(inputData, K=100000):
+    start = datetime.datetime.now()
+    last = start
     bestSolution = None
     bestCost = -1
-    solver = makeSolver(inputData)
+    kmeansSet = loadSet(KMEANS_SET_BIN)
+    clusterSet = loadSet(CLUSTER_SET_BIN)
+    solver = makeSolver(inputData, kmeansSet, clusterSet)
+
     for i in range(K):
+        runningLast = str(datetime.datetime.now() - last)
+        runningTotal = str(datetime.datetime.now() - start)
+        last = datetime.datetime.now()
+        perr2('Iteration {0} / {1} (running {2} / {3})'
+              ''.format(i + 1, K, runningLast, runningTotal))
         cost, solution = solver()
         if cost is None:
             continue
@@ -598,7 +726,13 @@ def solveBest(inputData, K=1):
             bestCost = cost
             bestSolution = solution
             open('current.sol', 'w').write(solution)
-            perr('New solution: {0}'.format(cost))
+            open('best.sol', 'w').write(solution)
+            perr2('New best solution: {0}'.format(cost))
+
+        saveSet(kmeansSet, KMEANS_SET_BIN)
+        saveSet(clusterSet, CLUSTER_SET_BIN)
+        # for x in kmeansSet:
+        #     perr2(x)
     return bestSolution
 
 
@@ -607,6 +741,7 @@ def solveIt(inputData):
 
 
 if __name__ == '__main__':
+    random.seed()
     if len(sys.argv) > 1:
         fileLocation = sys.argv[1].strip()
         inputDataFile = open(fileLocation, 'r')

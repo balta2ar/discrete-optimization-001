@@ -51,14 +51,14 @@ while (length(l) == 1) {
         d <- last(x[o])
         e <- last(y[o])
         arrows(a, b, d, e,
-               length=0.25, angle=20, col=colors[i])
+               length=0.20, angle=10, col=colors[i])
     }
     l <- readLines(conn, 1)
     i <- i + 1
 }
 legend(min(x)-3, max(y)+3, legendLabels, col=colors,
        lty=c(1,1), lwd=c(5, 5), cex=2, bty='n')
-text(x, y, labels=0:(length(x)-1), pos=2, cex=2)
+# text(x, y, labels=0:(length(x)-1), pos=2, cex=2, col='gray')
 text(max(x), min(y), obj, cex=2.5, pos=2)
 close(conn)
 dev.off()
