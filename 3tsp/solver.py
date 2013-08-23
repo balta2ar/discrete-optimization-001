@@ -2,11 +2,44 @@
 # -*- coding: utf-8 -*-
 
 import os
+import sys
 from subprocess import Popen, PIPE
+
+from numpy import array
+from scipy.cluster.vq import kmeans, vq
+
+
+def indices(x, xs):
+    return [i for i in range(len(xs)) if xs[i] == x]
+
+
+def solveTSP(customers):
+    return ''
 
 
 def solveIt(inputData):
+    lines = inputData.split('\n')
 
+    N = int(lines[0])
+    customers = []
+    for i in range(1, N+1):
+        pair = map(float, lines[i].split())
+        customers.append((pair[0], pair[1]))
+
+    V = 25
+    coords = array([c for c in customers])
+    centroids, _ = kmeans(coords, V)
+    idx, _ = vq(coords, centroids)
+    clusterIndices = [indices(i, idx) for i in range(V)]
+
+    # print(idx)
+    # print(clusterIndices)
+    for i, v in enumerate(clusterIndices):
+        print('{0}: {1}'.format(i, len(v)))
+
+    return solveTSP(customers)
+
+    return open('5.sol').read()
     # Writes the inputData to a temporay file
 
     tmpFileName = 'tmp.data'
@@ -27,8 +60,6 @@ def solveIt(inputData):
 
     return stdout.strip()
 
-
-import sys
 
 if __name__ == '__main__':
     if len(sys.argv) > 1:
