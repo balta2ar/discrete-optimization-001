@@ -220,7 +220,10 @@ func (ctx Context) nearestTo(j int) int {
 func printSolution(solution Solution) {
     fmt.Printf("%f %d\n", solution.Cost, 0)
     for i := 0; i < len(solution.Order); i++ {
-        fmt.Printf("%d ", solution.Order[i])
+        fmt.Printf("%d", solution.Order[i])
+        if (i < len(solution.Order) - 1) {
+            fmt.Printf(" ")
+        }
     }
     fmt.Printf("\n")
 }
@@ -409,7 +412,6 @@ func (ctx Context) lateAcceptanceHillClimbing(origSolution Solution, K, iter, or
         if (predictedCost <= trail[current]) || (predictedCost <= bestCost) {
             solution = ctx.acceptPredictedSolution(p1, p3, solution)
             bestCost = predictedCost
-            penalties = origPenalties
         }
 
         trail[current] = solution.Cost
@@ -422,19 +424,22 @@ func (ctx Context) lateAcceptanceHillClimbing(origSolution Solution, K, iter, or
 
             log.Printf("current cost %f\n", solution.Cost)
             t = time.Now()
-            if oldBest == -1 {
+            if oldBest < 0.0 {
                 oldBest = bestCost
             }
-            if bestCost < oldBest {
+            delta := oldBest - bestCost
+            if delta > 0 {
                 oldBest = bestCost
+                penalties = origPenalties
+                // log.Println("setting old best")
             } else {
                 if penalties == 0 {
                     log.Println("No progress, leaving")
                     break
                 }
                 penalties -= 1
+                log.Printf("penalties %v, bestCost %f oldBest %f\n", penalties, bestCost, oldBest)
             }
-            log.Printf("penalty %v, bestCost %f oldBest %f\n", penalties, bestCost, oldBest)
         }
 
         if solution.Cost < goalCost {
@@ -487,7 +492,8 @@ func (ctx Context) simulatedAnnealing() Solution {
     //     solution = *ptr
     // }
 
-    goalCost := 37300.0
+    goalCost := 0.0
+    // goalCost := 37300.0
     // goalCost := 322990.0
     i := 0
     iLimit := 5
@@ -882,18 +888,18 @@ func initContextFromFile(filename string) Context {
 }
 
 func createContext(filename string) Context {
-    // ctx := initContextFromFile(filename)
-    // return ctx
-
-    var ctx Context
-    ptr := loadContext("context.bin")
-    if ptr == nil {
-        ctx = initContextFromFile(filename)
-        saveContext(&ctx, "context.bin")
-    } else {
-        ctx = *ptr
-    }
+    ctx := initContextFromFile(filename)
     return ctx
+
+    // var ctx Context
+    // ptr := loadContext("context.bin")
+    // if ptr == nil {
+    //     ctx = initContextFromFile(filename)
+    //     saveContext(&ctx, "context.bin")
+    // } else {
+    //     ctx = *ptr
+    // }
+    // return ctx
 }
 
 func solveFile(filename string, alg string) int {
