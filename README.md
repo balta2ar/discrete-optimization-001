@@ -41,9 +41,7 @@ I don't count them either.
 - Mixed Integer Programming (MIP)
   - external solver: [SCIP](http://scip.zib.de)
   - problem format: PIP
-  - problem formulations
-    - Miller-Tucker-Zemlin
-    - subtour elimination
+  - problem formulations: Miller-Tucker-Zemlin, subtour elimination
 
 #### Warehouse Location Problem (WLP)
 
@@ -52,9 +50,7 @@ I don't count them either.
 - Mixed Integer Programming (MIP)
   - external solver: [SCIP](http://scip.zib.de)
   - problem format: PIP
-  - problem formulations
-    - SimpleModel
-    - LectureModel
+  - problem formulations: SimpleModel, LectureModel
 
 #### Vehicle Routing Problem (VRP)
 
@@ -65,15 +61,11 @@ I don't count them either.
 - Local Search (LS)
   - Simulated Annealing (SA)
   - Metropolis
-  - neighbour generation moves:
-    - move customer from one route to another
-    - swap two customers
+  - neighbour generation moves: 1. move customer from one route to another 2. swap two customers
 - Mixed Integer Programming (MIP)
   - external solver: [SCIP](http://scip.zib.de)
   - problem format: PIP
-  - problem formulations
-    - AssignCustomersModel (similar to WLP)
-    - OrderCustomersModel (similar to TSP)
+  - problem formulations: AssignCustomersModel (similar to WLP), OrderCustomersModel (similar to TSP)
 
 #### Puzzle Challenge (PC)
 
